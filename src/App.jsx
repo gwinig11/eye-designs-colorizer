@@ -95,6 +95,138 @@ const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 const IMAGE_MODEL = "gpt-image-2";
 const IMAGE_QUALITY = "auto";
 const MAX_GENERATION_ATTEMPTS = 2;
+const ORIGINAL_LINE_LUMA_THRESHOLD = 245;
+const ORIGINAL_LINE_FULL_STRENGTH_LUMA = 165;
+const COLOR_LAYER_MAX_SATURATION = 0.45;
+
+const loadImageFromDataUrl = (src) => new Promise((resolve, reject) => {
+  const img = new Image();
+  img.onload = () => resolve(img);
+  img.onerror = reject;
+  img.src = src;
+});
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const rgbToHsl = (r, g, b) => {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+    if (max === r) {
+      h = (g - b) / d + (g < b ? 6 : 0);
+    } else if (max === g) {
+      h = (b - r) / d + 2;
+    } else {
+      h = (r - g) / d + 4;
+    }
+
+    h /= 6;
+  }
+
+  return [h, s, l];
+};
+
+const hueToRgb = (p, q, t) => {
+  if (t < 0) t += 1;
+  if (t > 1) t -= 1;
+  if (t < 1 / 6) return p + (q - p) * 6 * t;
+  if (t < 1 / 2) return q;
+  if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+  return p;
+};
+
+const hslToRgb = (h, s, l) => {
+  if (s === 0) {
+    const gray = Math.round(l * 255);
+    return [gray, gray, gray];
+  }
+
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+
+  return [
+    Math.round(hueToRgb(p, q, h + 1 / 3) * 255),
+    Math.round(hueToRgb(p, q, h) * 255),
+    Math.round(hueToRgb(p, q, h - 1 / 3) * 255)
+  ];
+};
+
+const preserveOriginalWithColorLayer = async (originalSrc, generatedSrc) => {
+  const [originalImg, generatedImg] = await Promise.all([
+    loadImageFromDataUrl(originalSrc),
+    loadImageFromDataUrl(generatedSrc)
+  ]);
+
+  const width = originalImg.naturalWidth || originalImg.width;
+  const height = originalImg.naturalHeight || originalImg.height;
+
+  const originalCanvas = document.createElement('canvas');
+  const originalCtx = originalCanvas.getContext('2d', { willReadFrequently: true });
+  originalCanvas.width = width;
+  originalCanvas.height = height;
+  originalCtx.drawImage(originalImg, 0, 0, width, height);
+
+  const colorCanvas = document.createElement('canvas');
+  const colorCtx = colorCanvas.getContext('2d', { willReadFrequently: true });
+  colorCanvas.width = width;
+  colorCanvas.height = height;
+  colorCtx.imageSmoothingEnabled = true;
+  colorCtx.imageSmoothingQuality = 'high';
+  colorCtx.filter = 'blur(1.2px)';
+  colorCtx.drawImage(generatedImg, 0, 0, width, height);
+  colorCtx.filter = 'none';
+
+  const originalImageData = originalCtx.getImageData(0, 0, width, height);
+  const colorImageData = colorCtx.getImageData(0, 0, width, height);
+  const outputImageData = originalCtx.createImageData(width, height);
+
+  const originalPixels = originalImageData.data;
+  const colorPixels = colorImageData.data;
+  const outputPixels = outputImageData.data;
+
+  for (let i = 0; i < originalPixels.length; i += 4) {
+    const originalR = originalPixels[i];
+    const originalG = originalPixels[i + 1];
+    const originalB = originalPixels[i + 2];
+    const originalA = originalPixels[i + 3];
+
+    const originalLuma = 0.2126 * originalR + 0.7152 * originalG + 0.0722 * originalB;
+    const lineStrength = clamp(
+      (ORIGINAL_LINE_LUMA_THRESHOLD - originalLuma) /
+        (ORIGINAL_LINE_LUMA_THRESHOLD - ORIGINAL_LINE_FULL_STRENGTH_LUMA),
+      0,
+      1
+    );
+
+    const [colorHue, colorSaturation] = rgbToHsl(
+      colorPixels[i],
+      colorPixels[i + 1],
+      colorPixels[i + 2]
+    );
+    const targetLightness = 0.88 - (1 - originalLuma / 255) * 0.28;
+    const targetSaturation = Math.min(colorSaturation * 0.8, COLOR_LAYER_MAX_SATURATION);
+    const [fillR, fillG, fillB] = hslToRgb(colorHue, targetSaturation, clamp(targetLightness, 0.56, 0.92));
+
+    outputPixels[i] = Math.round(fillR * (1 - lineStrength) + originalR * lineStrength);
+    outputPixels[i + 1] = Math.round(fillG * (1 - lineStrength) + originalG * lineStrength);
+    outputPixels[i + 2] = Math.round(fillB * (1 - lineStrength) + originalB * lineStrength);
+    outputPixels[i + 3] = originalA;
+  }
+
+  originalCtx.putImageData(outputImageData, 0, 0);
+  return originalCanvas.toDataURL('image/png');
+};
 
 function App() {
   const [selectedStyleIndex, setSelectedStyleIndex] = useState(null);
@@ -123,8 +255,6 @@ function App() {
             while (!STYLES[next].previewImage && next !== prev) next = (next + 1) % STYLES.length;
             return next;
           });
-        } else if (lightboxIndex !== null && resultImages.length > 1) {
-          setLightboxIndex((prev) => (prev + 1) % resultImages.length);
         }
       } else if (e.key === 'ArrowLeft') {
         if (stylePreviewIndex !== null) {
@@ -133,14 +263,12 @@ function App() {
             while (!STYLES[next].previewImage && next !== prev) next = (next - 1 + STYLES.length) % STYLES.length;
             return next;
           });
-        } else if (lightboxIndex !== null && resultImages.length > 1) {
-          setLightboxIndex((prev) => (prev - 1 + resultImages.length) % resultImages.length);
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [stylePreviewIndex, lightboxIndex, resultImages.length]);
+  }, [stylePreviewIndex]);
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -195,7 +323,7 @@ function App() {
             };
 
             await page.render(renderContext).promise;
-            const imageUrl = canvas.toDataURL('image/jpeg', 1.0);
+            const imageUrl = canvas.toDataURL('image/png');
             setImagePreview(imageUrl);
             setImageFile(file);
           } catch (innerErr) {
@@ -388,7 +516,12 @@ function App() {
 
       if (validResults.length > 0) {
         console.log(`Successfully retrieved ${validResults.length} image(s) in ${Math.round((performance.now() - startedAt) / 1000)}s.`);
-        setResultImages(validResults);
+        console.log("Post-processing generated images to preserve original linework...");
+        const preservedResults = await Promise.all(
+          validResults.map((result) => preserveOriginalWithColorLayer(imagePreview, result))
+        );
+        console.log("Original-preserving post-processing complete.");
+        setResultImages(preservedResults);
 
         if (failedResults.length > 0) {
           setErrorMsg(`${validResults.length} of ${numVariations} images completed. ${failedResults.length} failed after retry.`);
