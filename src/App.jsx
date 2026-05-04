@@ -17,14 +17,14 @@ const STYLES = [
   {
     name: "Contemporary #2",
     description: "White + Marble + Wood Contrast",
-    promptText: "Modern Luxury Optical (White + Marble + Wood Contrast)\nUse a bright, minimal base with strong material contrast and subtle premium detailing. CORE MATERIALS Walls: crisp soft white / off-white (clean, gallery-like) Feature surfaces: white marble with soft gray veining (reception, key counters) Wood elements: medium-dark walnut / espresso slats or panels (adds depth + contrast) Floors: light gray large-format tile or polished concrete look DISPLAY + FIXTURES Shelving: clean white or glass-forward Frames display: minimal, evenly spaced, highly organized Counters: marble + wood combo (luxury retail feel) Hardware: brushed metal or chrome (subtle, not flashy) ACCENTS (VERY CONTROLLED) Light greenery (small plants only) Minimal black/charcoal for definition Occasional soft neutral upholstery (light gray) 🚫 No bright colors 🚫 No heavy textures 🚫 No clutter LIGHTING Bright, even retail lighting Neutral-white temperature (not warm yellow, not cool blue) Decorative pendants (glass/globe style) for visual interest Soft shadows, very clean illumination MATERIAL BEHAVIOR Surfaces should feel real and premium Marble = subtle veining, not dramatic Wood = clean grain, not rustic Everything = crisp edges, no softness or blur SPATIAL FEEL Open, airy, uncluttered Clear sightlines across the space Symmetry and alignment where possible OVERALL VIBE Modern luxury optical showroom — clean, architectural, high-end, and minimal with strong material contrast.",
+    promptText: "Modern Luxury Optical (White + Marble + Wood Contrast)\nUse a bright, minimal base with strong material contrast and subtle premium detailing. CORE MATERIALS Walls: crisp soft white / off-white (clean, gallery-like) Feature surfaces: white marble with soft gray veining (reception, key counters) Wood elements: medium-dark walnut / espresso slats or panels (adds depth + contrast) Floors: light gray large-format tile or polished concrete look EXISTING ELEMENT COLOR ONLY Shelving, counters, hardware, furniture, and fixtures may receive color/material treatment ONLY if they already exist in the original image. Do not add new decor, plants, objects, furniture, fixtures, or display items. ACCENTS (VERY CONTROLLED) Minimal black/charcoal for existing line definition only Occasional soft neutral upholstery only on existing seating No bright colors No heavy textures No clutter LIGHTING Bright, even retail lighting Neutral-white temperature (not warm yellow, not cool blue) Soft shadows only where they already align with original geometry MATERIAL BEHAVIOR Surfaces should feel real and premium Marble = subtle veining, not dramatic Wood = clean grain, not rustic Everything = crisp edges, no softness or blur SPATIAL FEEL Open, airy, uncluttered Clear sightlines across the space Symmetry and alignment where possible OVERALL VIBE Modern luxury optical showroom — clean, architectural, high-end, and minimal with strong material contrast.",
     color: "#7d8c97",
     previewImage: "/modern-light-preview.png"
   },
   {
     name: "Transitional",
     description: "Lightened Floor + Dark Contrast",
-    promptText: "Classic Luxury Optical (Lightened Floor + Blue-Gray Walls)\nUse a refined traditional palette, but with slightly brighter flooring and cooler wall tones to create a more open, modern-luxury feel while preserving classic materials. CORE MATERIALS / COLORS Walls: soft blue-gray (cool neutral, slightly desaturated, not warm gray) Millwork / display cabinets: deep dark wood (mahogany / espresso) Floors: light-to-medium warm wood (lift brightness ~20–30% vs typical dark wood, maintain natural tone, no dark heavy stain) Cabinet interiors: soft white or lightly backlit neutral DISPLAY + FIXTURES Cabinetry: tall, glass-front display cases with traditional wood framing Center displays: wood base with glass showcase top Hardware: brushed brass or subtle warm metal FURNITURE Desks/tables: dark wood (keep contrast with lighter floor) Seating: light neutral upholstery (cream / soft gray) ACCENTS Minimal greenery No bold colors COLOR BEHAVIOR Walls must read clearly cooler (blue-gray), not beige or taupe Floor must read noticeably lighter than millwork while still wood Maintain contrast: dark wood vs lighter floor vs cool walls LIGHTING Soft warm ambient lighting Subtle cabinet lighting MATERIAL BEHAVIOR Wood grain visible but do not increase contrast or introduce edge lines Walls must remain perfectly flat with zero banding or edge shading SPATIAL FEEL Open, slightly brighter than traditional luxury Balanced warm (wood) + cool (walls) OVERALL VIBE Classic luxury optical showroom with a lighter, more breathable feel — cooler walls and brighter flooring while preserving rich wood contrast",
+    promptText: "Classic Luxury Optical (Lightened Floor + Blue-Gray Walls)\nUse a refined traditional palette, but with slightly brighter flooring and cooler wall tones to create a more open, modern-luxury feel while preserving classic materials. CORE MATERIALS / COLORS Walls: soft blue-gray (cool neutral, slightly desaturated, not warm gray) Millwork / display cabinets: deep dark wood (mahogany / espresso) Floors: light-to-medium warm wood (lift brightness ~20–30% vs typical dark wood, maintain natural tone, no dark heavy stain) Cabinet interiors: soft white or lightly backlit neutral EXISTING ELEMENT COLOR ONLY Cabinetry, display cases, desks, tables, seating, hardware, and fixtures may receive color/material treatment ONLY if they already exist in the original image. Do not add new decor, plants, objects, furniture, fixtures, or display items. ACCENTS No bold colors COLOR BEHAVIOR Walls must read clearly cooler (blue-gray), not beige or taupe Floor must read noticeably lighter than millwork while still wood Maintain contrast: dark wood vs lighter floor vs cool walls LIGHTING Soft warm ambient lighting only where it aligns with existing geometry MATERIAL BEHAVIOR Wood grain visible but do not increase contrast or introduce edge lines Walls must remain perfectly flat with zero banding or edge shading SPATIAL FEEL Open, slightly brighter than traditional luxury Balanced warm (wood) + cool (walls) OVERALL VIBE Classic luxury optical showroom with a lighter, more breathable feel — cooler walls and brighter flooring while preserving rich wood contrast",
     color: "#36454f",
     previewImage: "/classic-luxury-preview.png"
   },
@@ -57,6 +57,8 @@ Take the provided black-and-white floorplan or 3D render and **apply color only*
 * **Do NOT split, segment, outline, frame, border, or decorate any region internally**
 * **Do NOT create contrast edges, bands, trims, borders, or framing effects inside any wall or surface**
 * **Do NOT add light fixtures, or any element not in the original**
+* **Do NOT add plants, furniture, decor, people, equipment, signage, labels, icons, logos, or objects of any kind**
+* **Do NOT generate fake text, pseudo-text, blurry labels, shadow text, or duplicate labels**
 * **Do NOT remove logo box and/or frame if it is present in the original image**
 * **No text labels should be added to the final image**
 
@@ -97,11 +99,10 @@ const IMAGE_QUALITY = "auto";
 const MAX_GENERATION_ATTEMPTS = 2;
 const ORIGINAL_DETAIL_LUMA_THRESHOLD = 210;
 const ORIGINAL_DETAIL_FULL_STRENGTH_LUMA = 80;
-const GENERATED_NEUTRAL_INK_LUMA_THRESHOLD = 220;
-const GENERATED_NEUTRAL_INK_CHROMA_THRESHOLD = 45;
-const GENERATED_INK_REMOVAL_STRENGTH = 0.88;
 const ORIGINAL_DETAIL_MAX_RESTORE_STRENGTH = 0.94;
-const SOFT_COLOR_BLUR_RADIUS = 2.5;
+const SOFT_COLOR_BLUR_RADIUS = 6;
+const COLOR_WASH_STRENGTH = 0.94;
+const COLOR_WASH_MIN_LUMA = 190;
 const CLEAN_WHITE_LUMA_THRESHOLD = 248;
 const CLEAN_WHITE_CHROMA_THRESHOLD = 10;
 
@@ -190,7 +191,7 @@ const cleanGeneratedImageWithOriginalDetails = async (originalSrc, generatedSrc)
   outputCanvas.height = height;
   outputCtx.imageSmoothingEnabled = true;
   outputCtx.imageSmoothingQuality = 'high';
-  outputCtx.drawImage(generatedImg, 0, 0, width, height);
+  outputCtx.drawImage(originalImg, 0, 0, width, height);
   const outputImageData = outputCtx.getImageData(0, 0, width, height);
 
   const softColorCanvas = document.createElement('canvas');
@@ -224,33 +225,20 @@ const cleanGeneratedImageWithOriginalDetails = async (originalSrc, generatedSrc)
       continue;
     }
 
-    const generatedR = outputPixels[i];
-    const generatedG = outputPixels[i + 1];
-    const generatedB = outputPixels[i + 2];
-    const generatedLuma = 0.2126 * generatedR + 0.7152 * generatedG + 0.0722 * generatedB;
-    const generatedChroma =
-      Math.max(generatedR, generatedG, generatedB) -
-      Math.min(generatedR, generatedG, generatedB);
-    const isGeneratedNeutralInk =
-      generatedLuma <= GENERATED_NEUTRAL_INK_LUMA_THRESHOLD &&
-      generatedChroma <= GENERATED_NEUTRAL_INK_CHROMA_THRESHOLD;
-
-    if (isGeneratedNeutralInk) {
-      outputPixels[i] = Math.round(
-        generatedR * (1 - GENERATED_INK_REMOVAL_STRENGTH) +
-          softColorPixels[i] * GENERATED_INK_REMOVAL_STRENGTH
-      );
-      outputPixels[i + 1] = Math.round(
-        generatedG * (1 - GENERATED_INK_REMOVAL_STRENGTH) +
-          softColorPixels[i + 1] * GENERATED_INK_REMOVAL_STRENGTH
-      );
-      outputPixels[i + 2] = Math.round(
-        generatedB * (1 - GENERATED_INK_REMOVAL_STRENGTH) +
-          softColorPixels[i + 2] * GENERATED_INK_REMOVAL_STRENGTH
-      );
-    }
-
     const originalLuma = 0.2126 * originalR + 0.7152 * originalG + 0.0722 * originalB;
+    const softR = softColorPixels[i];
+    const softG = softColorPixels[i + 1];
+    const softB = softColorPixels[i + 2];
+    const softLuma = 0.2126 * softR + 0.7152 * softG + 0.0722 * softB;
+    const lumaLift = Math.max(0, COLOR_WASH_MIN_LUMA - softLuma);
+    const washR = Math.min(255, softR + lumaLift);
+    const washG = Math.min(255, softG + lumaLift);
+    const washB = Math.min(255, softB + lumaLift);
+
+    outputPixels[i] = Math.round(originalR * (1 - COLOR_WASH_STRENGTH) + washR * COLOR_WASH_STRENGTH);
+    outputPixels[i + 1] = Math.round(originalG * (1 - COLOR_WASH_STRENGTH) + washG * COLOR_WASH_STRENGTH);
+    outputPixels[i + 2] = Math.round(originalB * (1 - COLOR_WASH_STRENGTH) + washB * COLOR_WASH_STRENGTH);
+
     const lineStrength = clamp(
       (ORIGINAL_DETAIL_LUMA_THRESHOLD - originalLuma) /
         (ORIGINAL_DETAIL_LUMA_THRESHOLD - ORIGINAL_DETAIL_FULL_STRENGTH_LUMA),
