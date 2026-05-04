@@ -97,9 +97,11 @@ const IMAGE_QUALITY = "auto";
 const MAX_GENERATION_ATTEMPTS = 2;
 const ORIGINAL_DETAIL_LUMA_THRESHOLD = 210;
 const ORIGINAL_DETAIL_FULL_STRENGTH_LUMA = 80;
-const GENERATED_DETAIL_NEARBY_LUMA_THRESHOLD = 190;
-const GENERATED_DETAIL_SEARCH_RADIUS = 2;
-const ORIGINAL_DETAIL_MAX_RESTORE_STRENGTH = 0.72;
+const GENERATED_NEUTRAL_INK_LUMA_THRESHOLD = 220;
+const GENERATED_NEUTRAL_INK_CHROMA_THRESHOLD = 45;
+const GENERATED_INK_REMOVAL_STRENGTH = 0.88;
+const ORIGINAL_DETAIL_MAX_RESTORE_STRENGTH = 0.94;
+const SOFT_COLOR_BLUR_RADIUS = 2.5;
 const CLEAN_WHITE_LUMA_THRESHOLD = 248;
 const CLEAN_WHITE_CHROMA_THRESHOLD = 10;
 
@@ -165,33 +167,6 @@ const createEdgeConnectedWhiteMask = (pixels, width, height) => {
   return mask;
 };
 
-const hasGeneratedDetailNearby = (pixels, width, height, pixelIndex) => {
-  const x = pixelIndex % width;
-  const y = Math.floor(pixelIndex / width);
-
-  for (let dy = -GENERATED_DETAIL_SEARCH_RADIUS; dy <= GENERATED_DETAIL_SEARCH_RADIUS; dy++) {
-    const sampleY = y + dy;
-    if (sampleY < 0 || sampleY >= height) continue;
-
-    for (let dx = -GENERATED_DETAIL_SEARCH_RADIUS; dx <= GENERATED_DETAIL_SEARCH_RADIUS; dx++) {
-      const sampleX = x + dx;
-      if (sampleX < 0 || sampleX >= width) continue;
-
-      const offset = (sampleY * width + sampleX) * 4;
-      const luma =
-        0.2126 * pixels[offset] +
-        0.7152 * pixels[offset + 1] +
-        0.0722 * pixels[offset + 2];
-
-      if (luma <= GENERATED_DETAIL_NEARBY_LUMA_THRESHOLD) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-};
-
 const cleanGeneratedImageWithOriginalDetails = async (originalSrc, generatedSrc) => {
   const [originalImg, generatedImg] = await Promise.all([
     loadImageFromDataUrl(originalSrc),
@@ -218,8 +193,20 @@ const cleanGeneratedImageWithOriginalDetails = async (originalSrc, generatedSrc)
   outputCtx.drawImage(generatedImg, 0, 0, width, height);
   const outputImageData = outputCtx.getImageData(0, 0, width, height);
 
+  const softColorCanvas = document.createElement('canvas');
+  const softColorCtx = softColorCanvas.getContext('2d', { willReadFrequently: true });
+  softColorCanvas.width = width;
+  softColorCanvas.height = height;
+  softColorCtx.imageSmoothingEnabled = true;
+  softColorCtx.imageSmoothingQuality = 'high';
+  softColorCtx.filter = `blur(${SOFT_COLOR_BLUR_RADIUS}px)`;
+  softColorCtx.drawImage(generatedImg, 0, 0, width, height);
+  softColorCtx.filter = 'none';
+  const softColorImageData = softColorCtx.getImageData(0, 0, width, height);
+
   const originalPixels = originalImageData.data;
   const outputPixels = outputImageData.data;
+  const softColorPixels = softColorImageData.data;
   const edgeConnectedWhiteMask = createEdgeConnectedWhiteMask(originalPixels, width, height);
 
   for (let i = 0; i < originalPixels.length; i += 4) {
@@ -237,6 +224,32 @@ const cleanGeneratedImageWithOriginalDetails = async (originalSrc, generatedSrc)
       continue;
     }
 
+    const generatedR = outputPixels[i];
+    const generatedG = outputPixels[i + 1];
+    const generatedB = outputPixels[i + 2];
+    const generatedLuma = 0.2126 * generatedR + 0.7152 * generatedG + 0.0722 * generatedB;
+    const generatedChroma =
+      Math.max(generatedR, generatedG, generatedB) -
+      Math.min(generatedR, generatedG, generatedB);
+    const isGeneratedNeutralInk =
+      generatedLuma <= GENERATED_NEUTRAL_INK_LUMA_THRESHOLD &&
+      generatedChroma <= GENERATED_NEUTRAL_INK_CHROMA_THRESHOLD;
+
+    if (isGeneratedNeutralInk) {
+      outputPixels[i] = Math.round(
+        generatedR * (1 - GENERATED_INK_REMOVAL_STRENGTH) +
+          softColorPixels[i] * GENERATED_INK_REMOVAL_STRENGTH
+      );
+      outputPixels[i + 1] = Math.round(
+        generatedG * (1 - GENERATED_INK_REMOVAL_STRENGTH) +
+          softColorPixels[i + 1] * GENERATED_INK_REMOVAL_STRENGTH
+      );
+      outputPixels[i + 2] = Math.round(
+        generatedB * (1 - GENERATED_INK_REMOVAL_STRENGTH) +
+          softColorPixels[i + 2] * GENERATED_INK_REMOVAL_STRENGTH
+      );
+    }
+
     const originalLuma = 0.2126 * originalR + 0.7152 * originalG + 0.0722 * originalB;
     const lineStrength = clamp(
       (ORIGINAL_DETAIL_LUMA_THRESHOLD - originalLuma) /
@@ -245,7 +258,7 @@ const cleanGeneratedImageWithOriginalDetails = async (originalSrc, generatedSrc)
       1
     );
 
-    if (lineStrength > 0 && !hasGeneratedDetailNearby(outputPixels, width, height, pixelIndex)) {
+    if (lineStrength > 0) {
       const restoreStrength = Math.min(lineStrength, ORIGINAL_DETAIL_MAX_RESTORE_STRENGTH);
       outputPixels[i] = Math.round(outputPixels[i] * (1 - restoreStrength) + originalR * restoreStrength);
       outputPixels[i + 1] = Math.round(outputPixels[i + 1] * (1 - restoreStrength) + originalG * restoreStrength);
