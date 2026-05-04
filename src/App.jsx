@@ -97,9 +97,12 @@ const IMAGE_QUALITY = "auto";
 const MAX_GENERATION_ATTEMPTS = 2;
 const ORIGINAL_LINE_LUMA_THRESHOLD = 205;
 const ORIGINAL_LINE_FULL_STRENGTH_LUMA = 85;
-const COLOR_LAYER_MAX_SATURATION = 0.82;
-const COLOR_LAYER_MIN_SATURATION = 0.18;
-const COLOR_LAYER_SATURATION_BOOST = 1.9;
+const CLEAN_WHITE_LUMA_THRESHOLD = 248;
+const CLEAN_WHITE_CHROMA_THRESHOLD = 10;
+const GENERATED_COLOR_MIN_SATURATION = 0.12;
+const COLOR_LAYER_MAX_SATURATION = 0.72;
+const COLOR_LAYER_SATURATION_BOOST = 1.45;
+const COLOR_LAYER_BLUR_RADIUS = 5;
 
 const loadImageFromDataUrl = (src) => new Promise((resolve, reject) => {
   const img = new Image();
@@ -164,6 +167,59 @@ const hslToRgb = (h, s, l) => {
   ];
 };
 
+const isCleanWhitePixel = (pixels, pixelOffset) => {
+  const r = pixels[pixelOffset];
+  const g = pixels[pixelOffset + 1];
+  const b = pixels[pixelOffset + 2];
+  const a = pixels[pixelOffset + 3];
+
+  if (a < 250) return false;
+
+  const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+  return luma >= CLEAN_WHITE_LUMA_THRESHOLD && chroma <= CLEAN_WHITE_CHROMA_THRESHOLD;
+};
+
+const createEdgeConnectedWhiteMask = (pixels, width, height) => {
+  const mask = new Uint8Array(width * height);
+  const stack = [];
+
+  const pushIfWhite = (x, y) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+
+    const index = y * width + x;
+    if (mask[index]) return;
+
+    if (isCleanWhitePixel(pixels, index * 4)) {
+      mask[index] = 1;
+      stack.push(index);
+    }
+  };
+
+  for (let x = 0; x < width; x++) {
+    pushIfWhite(x, 0);
+    pushIfWhite(x, height - 1);
+  }
+
+  for (let y = 1; y < height - 1; y++) {
+    pushIfWhite(0, y);
+    pushIfWhite(width - 1, y);
+  }
+
+  while (stack.length > 0) {
+    const index = stack.pop();
+    const x = index % width;
+    const y = Math.floor(index / width);
+
+    pushIfWhite(x + 1, y);
+    pushIfWhite(x - 1, y);
+    pushIfWhite(x, y + 1);
+    pushIfWhite(x, y - 1);
+  }
+
+  return mask;
+};
+
 const preserveOriginalWithColorLayer = async (originalSrc, generatedSrc) => {
   const [originalImg, generatedImg] = await Promise.all([
     loadImageFromDataUrl(originalSrc),
@@ -185,7 +241,7 @@ const preserveOriginalWithColorLayer = async (originalSrc, generatedSrc) => {
   colorCanvas.height = height;
   colorCtx.imageSmoothingEnabled = true;
   colorCtx.imageSmoothingQuality = 'high';
-  colorCtx.filter = 'blur(1.2px)';
+  colorCtx.filter = `blur(${COLOR_LAYER_BLUR_RADIUS}px)`;
   colorCtx.drawImage(generatedImg, 0, 0, width, height);
   colorCtx.filter = 'none';
 
@@ -196,14 +252,43 @@ const preserveOriginalWithColorLayer = async (originalSrc, generatedSrc) => {
   const originalPixels = originalImageData.data;
   const colorPixels = colorImageData.data;
   const outputPixels = outputImageData.data;
+  const edgeConnectedWhiteMask = createEdgeConnectedWhiteMask(originalPixels, width, height);
 
   for (let i = 0; i < originalPixels.length; i += 4) {
+    const pixelIndex = i / 4;
     const originalR = originalPixels[i];
     const originalG = originalPixels[i + 1];
     const originalB = originalPixels[i + 2];
     const originalA = originalPixels[i + 3];
 
+    if (edgeConnectedWhiteMask[pixelIndex]) {
+      outputPixels[i] = originalR;
+      outputPixels[i + 1] = originalG;
+      outputPixels[i + 2] = originalB;
+      outputPixels[i + 3] = originalA;
+      continue;
+    }
+
     const originalLuma = 0.2126 * originalR + 0.7152 * originalG + 0.0722 * originalB;
+    const originalChroma = Math.max(originalR, originalG, originalB) - Math.min(originalR, originalG, originalB);
+    const [colorHue, colorSaturation, colorLightness] = rgbToHsl(
+      colorPixels[i],
+      colorPixels[i + 1],
+      colorPixels[i + 2]
+    );
+    const hasMeaningfulColor = colorSaturation >= GENERATED_COLOR_MIN_SATURATION;
+    const isCleanOriginalWhite =
+      originalLuma >= CLEAN_WHITE_LUMA_THRESHOLD &&
+      originalChroma <= CLEAN_WHITE_CHROMA_THRESHOLD;
+
+    if (isCleanOriginalWhite && !hasMeaningfulColor) {
+      outputPixels[i] = originalR;
+      outputPixels[i + 1] = originalG;
+      outputPixels[i + 2] = originalB;
+      outputPixels[i + 3] = originalA;
+      continue;
+    }
+
     const lineStrength = clamp(
       (ORIGINAL_LINE_LUMA_THRESHOLD - originalLuma) /
         (ORIGINAL_LINE_LUMA_THRESHOLD - ORIGINAL_LINE_FULL_STRENGTH_LUMA),
@@ -211,19 +296,13 @@ const preserveOriginalWithColorLayer = async (originalSrc, generatedSrc) => {
       1
     );
 
-    const [colorHue, colorSaturation, colorLightness] = rgbToHsl(
-      colorPixels[i],
-      colorPixels[i + 1],
-      colorPixels[i + 2]
-    );
-    const hasMeaningfulColor = colorSaturation > 0.035;
     const targetLightness = hasMeaningfulColor
       ? clamp(colorLightness * 0.75 + 0.14, 0.5, 0.88)
       : clamp(originalLuma / 255, 0.72, 0.96);
     const targetSaturation = hasMeaningfulColor
       ? clamp(
           colorSaturation * COLOR_LAYER_SATURATION_BOOST,
-          COLOR_LAYER_MIN_SATURATION,
+          0,
           COLOR_LAYER_MAX_SATURATION
         )
       : 0;
