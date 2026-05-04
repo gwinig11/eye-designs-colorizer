@@ -95,14 +95,10 @@ const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 const IMAGE_MODEL = "gpt-image-2";
 const IMAGE_QUALITY = "auto";
 const MAX_GENERATION_ATTEMPTS = 2;
-const ORIGINAL_LINE_LUMA_THRESHOLD = 205;
-const ORIGINAL_LINE_FULL_STRENGTH_LUMA = 85;
+const ORIGINAL_DETAIL_LUMA_THRESHOLD = 210;
+const ORIGINAL_DETAIL_FULL_STRENGTH_LUMA = 80;
 const CLEAN_WHITE_LUMA_THRESHOLD = 248;
 const CLEAN_WHITE_CHROMA_THRESHOLD = 10;
-const GENERATED_COLOR_MIN_SATURATION = 0.12;
-const COLOR_LAYER_MAX_SATURATION = 0.72;
-const COLOR_LAYER_SATURATION_BOOST = 1.45;
-const COLOR_LAYER_BLUR_RADIUS = 5;
 
 const loadImageFromDataUrl = (src) => new Promise((resolve, reject) => {
   const img = new Image();
@@ -112,60 +108,6 @@ const loadImageFromDataUrl = (src) => new Promise((resolve, reject) => {
 });
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
-const rgbToHsl = (r, g, b) => {
-  r /= 255;
-  g /= 255;
-  b /= 255;
-
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  let h = 0;
-  let s = 0;
-  const l = (max + min) / 2;
-
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-
-    if (max === r) {
-      h = (g - b) / d + (g < b ? 6 : 0);
-    } else if (max === g) {
-      h = (b - r) / d + 2;
-    } else {
-      h = (r - g) / d + 4;
-    }
-
-    h /= 6;
-  }
-
-  return [h, s, l];
-};
-
-const hueToRgb = (p, q, t) => {
-  if (t < 0) t += 1;
-  if (t > 1) t -= 1;
-  if (t < 1 / 6) return p + (q - p) * 6 * t;
-  if (t < 1 / 2) return q;
-  if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-  return p;
-};
-
-const hslToRgb = (h, s, l) => {
-  if (s === 0) {
-    const gray = Math.round(l * 255);
-    return [gray, gray, gray];
-  }
-
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
-
-  return [
-    Math.round(hueToRgb(p, q, h + 1 / 3) * 255),
-    Math.round(hueToRgb(p, q, h) * 255),
-    Math.round(hueToRgb(p, q, h - 1 / 3) * 255)
-  ];
-};
 
 const isCleanWhitePixel = (pixels, pixelOffset) => {
   const r = pixels[pixelOffset];
@@ -220,7 +162,7 @@ const createEdgeConnectedWhiteMask = (pixels, width, height) => {
   return mask;
 };
 
-const preserveOriginalWithColorLayer = async (originalSrc, generatedSrc) => {
+const cleanGeneratedImageWithOriginalDetails = async (originalSrc, generatedSrc) => {
   const [originalImg, generatedImg] = await Promise.all([
     loadImageFromDataUrl(originalSrc),
     loadImageFromDataUrl(generatedSrc)
@@ -235,22 +177,18 @@ const preserveOriginalWithColorLayer = async (originalSrc, generatedSrc) => {
   originalCanvas.height = height;
   originalCtx.drawImage(originalImg, 0, 0, width, height);
 
-  const colorCanvas = document.createElement('canvas');
-  const colorCtx = colorCanvas.getContext('2d', { willReadFrequently: true });
-  colorCanvas.width = width;
-  colorCanvas.height = height;
-  colorCtx.imageSmoothingEnabled = true;
-  colorCtx.imageSmoothingQuality = 'high';
-  colorCtx.filter = `blur(${COLOR_LAYER_BLUR_RADIUS}px)`;
-  colorCtx.drawImage(generatedImg, 0, 0, width, height);
-  colorCtx.filter = 'none';
-
   const originalImageData = originalCtx.getImageData(0, 0, width, height);
-  const colorImageData = colorCtx.getImageData(0, 0, width, height);
-  const outputImageData = originalCtx.createImageData(width, height);
+
+  const outputCanvas = document.createElement('canvas');
+  const outputCtx = outputCanvas.getContext('2d', { willReadFrequently: true });
+  outputCanvas.width = width;
+  outputCanvas.height = height;
+  outputCtx.imageSmoothingEnabled = true;
+  outputCtx.imageSmoothingQuality = 'high';
+  outputCtx.drawImage(generatedImg, 0, 0, width, height);
+  const outputImageData = outputCtx.getImageData(0, 0, width, height);
 
   const originalPixels = originalImageData.data;
-  const colorPixels = colorImageData.data;
   const outputPixels = outputImageData.data;
   const edgeConnectedWhiteMask = createEdgeConnectedWhiteMask(originalPixels, width, height);
 
@@ -270,52 +208,23 @@ const preserveOriginalWithColorLayer = async (originalSrc, generatedSrc) => {
     }
 
     const originalLuma = 0.2126 * originalR + 0.7152 * originalG + 0.0722 * originalB;
-    const originalChroma = Math.max(originalR, originalG, originalB) - Math.min(originalR, originalG, originalB);
-    const [colorHue, colorSaturation, colorLightness] = rgbToHsl(
-      colorPixels[i],
-      colorPixels[i + 1],
-      colorPixels[i + 2]
-    );
-    const hasMeaningfulColor = colorSaturation >= GENERATED_COLOR_MIN_SATURATION;
-    const isCleanOriginalWhite =
-      originalLuma >= CLEAN_WHITE_LUMA_THRESHOLD &&
-      originalChroma <= CLEAN_WHITE_CHROMA_THRESHOLD;
-
-    if (isCleanOriginalWhite && !hasMeaningfulColor) {
-      outputPixels[i] = originalR;
-      outputPixels[i + 1] = originalG;
-      outputPixels[i + 2] = originalB;
-      outputPixels[i + 3] = originalA;
-      continue;
-    }
-
     const lineStrength = clamp(
-      (ORIGINAL_LINE_LUMA_THRESHOLD - originalLuma) /
-        (ORIGINAL_LINE_LUMA_THRESHOLD - ORIGINAL_LINE_FULL_STRENGTH_LUMA),
+      (ORIGINAL_DETAIL_LUMA_THRESHOLD - originalLuma) /
+        (ORIGINAL_DETAIL_LUMA_THRESHOLD - ORIGINAL_DETAIL_FULL_STRENGTH_LUMA),
       0,
       1
     );
 
-    const targetLightness = hasMeaningfulColor
-      ? clamp(colorLightness * 0.75 + 0.14, 0.5, 0.88)
-      : clamp(originalLuma / 255, 0.72, 0.96);
-    const targetSaturation = hasMeaningfulColor
-      ? clamp(
-          colorSaturation * COLOR_LAYER_SATURATION_BOOST,
-          0,
-          COLOR_LAYER_MAX_SATURATION
-        )
-      : 0;
-    const [fillR, fillG, fillB] = hslToRgb(colorHue, targetSaturation, targetLightness);
-
-    outputPixels[i] = Math.round(fillR * (1 - lineStrength) + originalR * lineStrength);
-    outputPixels[i + 1] = Math.round(fillG * (1 - lineStrength) + originalG * lineStrength);
-    outputPixels[i + 2] = Math.round(fillB * (1 - lineStrength) + originalB * lineStrength);
+    if (lineStrength > 0) {
+      outputPixels[i] = Math.round(outputPixels[i] * (1 - lineStrength) + originalR * lineStrength);
+      outputPixels[i + 1] = Math.round(outputPixels[i + 1] * (1 - lineStrength) + originalG * lineStrength);
+      outputPixels[i + 2] = Math.round(outputPixels[i + 2] * (1 - lineStrength) + originalB * lineStrength);
+    }
     outputPixels[i + 3] = originalA;
   }
 
-  originalCtx.putImageData(outputImageData, 0, 0);
-  return originalCanvas.toDataURL('image/png');
+  outputCtx.putImageData(outputImageData, 0, 0);
+  return outputCanvas.toDataURL('image/png');
 };
 
 function App() {
@@ -606,11 +515,11 @@ function App() {
 
       if (validResults.length > 0) {
         console.log(`Successfully retrieved ${validResults.length} image(s) in ${Math.round((performance.now() - startedAt) / 1000)}s.`);
-        console.log("Post-processing generated images to preserve original linework...");
+        console.log("Post-processing generated images to clean background and restore original linework...");
         const preservedResults = await Promise.all(
-          validResults.map((result) => preserveOriginalWithColorLayer(imagePreview, result))
+          validResults.map((result) => cleanGeneratedImageWithOriginalDetails(imagePreview, result))
         );
-        console.log("Original-preserving post-processing complete.");
+        console.log("Background cleanup and original linework restore complete.");
         setResultImages(preservedResults);
 
         if (failedResults.length > 0) {
