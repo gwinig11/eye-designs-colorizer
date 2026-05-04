@@ -97,6 +97,9 @@ const IMAGE_QUALITY = "auto";
 const MAX_GENERATION_ATTEMPTS = 2;
 const ORIGINAL_DETAIL_LUMA_THRESHOLD = 210;
 const ORIGINAL_DETAIL_FULL_STRENGTH_LUMA = 80;
+const GENERATED_DETAIL_NEARBY_LUMA_THRESHOLD = 190;
+const GENERATED_DETAIL_SEARCH_RADIUS = 2;
+const ORIGINAL_DETAIL_MAX_RESTORE_STRENGTH = 0.72;
 const CLEAN_WHITE_LUMA_THRESHOLD = 248;
 const CLEAN_WHITE_CHROMA_THRESHOLD = 10;
 
@@ -162,6 +165,33 @@ const createEdgeConnectedWhiteMask = (pixels, width, height) => {
   return mask;
 };
 
+const hasGeneratedDetailNearby = (pixels, width, height, pixelIndex) => {
+  const x = pixelIndex % width;
+  const y = Math.floor(pixelIndex / width);
+
+  for (let dy = -GENERATED_DETAIL_SEARCH_RADIUS; dy <= GENERATED_DETAIL_SEARCH_RADIUS; dy++) {
+    const sampleY = y + dy;
+    if (sampleY < 0 || sampleY >= height) continue;
+
+    for (let dx = -GENERATED_DETAIL_SEARCH_RADIUS; dx <= GENERATED_DETAIL_SEARCH_RADIUS; dx++) {
+      const sampleX = x + dx;
+      if (sampleX < 0 || sampleX >= width) continue;
+
+      const offset = (sampleY * width + sampleX) * 4;
+      const luma =
+        0.2126 * pixels[offset] +
+        0.7152 * pixels[offset + 1] +
+        0.0722 * pixels[offset + 2];
+
+      if (luma <= GENERATED_DETAIL_NEARBY_LUMA_THRESHOLD) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
 const cleanGeneratedImageWithOriginalDetails = async (originalSrc, generatedSrc) => {
   const [originalImg, generatedImg] = await Promise.all([
     loadImageFromDataUrl(originalSrc),
@@ -215,10 +245,11 @@ const cleanGeneratedImageWithOriginalDetails = async (originalSrc, generatedSrc)
       1
     );
 
-    if (lineStrength > 0) {
-      outputPixels[i] = Math.round(outputPixels[i] * (1 - lineStrength) + originalR * lineStrength);
-      outputPixels[i + 1] = Math.round(outputPixels[i + 1] * (1 - lineStrength) + originalG * lineStrength);
-      outputPixels[i + 2] = Math.round(outputPixels[i + 2] * (1 - lineStrength) + originalB * lineStrength);
+    if (lineStrength > 0 && !hasGeneratedDetailNearby(outputPixels, width, height, pixelIndex)) {
+      const restoreStrength = Math.min(lineStrength, ORIGINAL_DETAIL_MAX_RESTORE_STRENGTH);
+      outputPixels[i] = Math.round(outputPixels[i] * (1 - restoreStrength) + originalR * restoreStrength);
+      outputPixels[i + 1] = Math.round(outputPixels[i + 1] * (1 - restoreStrength) + originalG * restoreStrength);
+      outputPixels[i + 2] = Math.round(outputPixels[i + 2] * (1 - restoreStrength) + originalB * restoreStrength);
     }
     outputPixels[i + 3] = originalA;
   }
