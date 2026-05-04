@@ -98,10 +98,10 @@ const IMAGE_MODEL = "gpt-image-2";
 const IMAGE_QUALITY = "auto";
 const MAX_GENERATION_ATTEMPTS = 2;
 const ORIGINAL_DETAIL_LUMA_THRESHOLD = 210;
-const ORIGINAL_DETAIL_FULL_STRENGTH_LUMA = 80;
-const ORIGINAL_DETAIL_MAX_RESTORE_STRENGTH = 0.94;
-const SOFT_COLOR_BLUR_RADIUS = 6;
-const COLOR_WASH_STRENGTH = 0.94;
+const SOFT_COLOR_BLUR_RADIUS = 3;
+const COLOR_LAYER_LOW_FREQ_SCALE = 0.08;
+const COLOR_LAYER_MIN_SIZE = 48;
+const COLOR_WASH_STRENGTH = 0.9;
 const COLOR_WASH_MIN_LUMA = 190;
 const CLEAN_WHITE_LUMA_THRESHOLD = 248;
 const CLEAN_WHITE_CHROMA_THRESHOLD = 10;
@@ -185,29 +185,34 @@ const cleanGeneratedImageWithOriginalDetails = async (originalSrc, generatedSrc)
 
   const originalImageData = originalCtx.getImageData(0, 0, width, height);
 
+  const lowFreqCanvas = document.createElement('canvas');
+  const lowFreqCtx = lowFreqCanvas.getContext('2d', { willReadFrequently: true });
+  lowFreqCanvas.width = Math.max(COLOR_LAYER_MIN_SIZE, Math.round(width * COLOR_LAYER_LOW_FREQ_SCALE));
+  lowFreqCanvas.height = Math.max(COLOR_LAYER_MIN_SIZE, Math.round(height * COLOR_LAYER_LOW_FREQ_SCALE));
+  lowFreqCtx.imageSmoothingEnabled = true;
+  lowFreqCtx.imageSmoothingQuality = 'high';
+  lowFreqCtx.drawImage(generatedImg, 0, 0, lowFreqCanvas.width, lowFreqCanvas.height);
+
+  const colorLayerCanvas = document.createElement('canvas');
+  const colorLayerCtx = colorLayerCanvas.getContext('2d', { willReadFrequently: true });
+  colorLayerCanvas.width = width;
+  colorLayerCanvas.height = height;
+  colorLayerCtx.imageSmoothingEnabled = true;
+  colorLayerCtx.imageSmoothingQuality = 'high';
+  colorLayerCtx.filter = `blur(${SOFT_COLOR_BLUR_RADIUS}px)`;
+  colorLayerCtx.drawImage(lowFreqCanvas, 0, 0, width, height);
+  colorLayerCtx.filter = 'none';
+  const colorLayerImageData = colorLayerCtx.getImageData(0, 0, width, height);
+
   const outputCanvas = document.createElement('canvas');
   const outputCtx = outputCanvas.getContext('2d', { willReadFrequently: true });
   outputCanvas.width = width;
   outputCanvas.height = height;
-  outputCtx.imageSmoothingEnabled = true;
-  outputCtx.imageSmoothingQuality = 'high';
-  outputCtx.drawImage(originalImg, 0, 0, width, height);
-  const outputImageData = outputCtx.getImageData(0, 0, width, height);
-
-  const softColorCanvas = document.createElement('canvas');
-  const softColorCtx = softColorCanvas.getContext('2d', { willReadFrequently: true });
-  softColorCanvas.width = width;
-  softColorCanvas.height = height;
-  softColorCtx.imageSmoothingEnabled = true;
-  softColorCtx.imageSmoothingQuality = 'high';
-  softColorCtx.filter = `blur(${SOFT_COLOR_BLUR_RADIUS}px)`;
-  softColorCtx.drawImage(generatedImg, 0, 0, width, height);
-  softColorCtx.filter = 'none';
-  const softColorImageData = softColorCtx.getImageData(0, 0, width, height);
+  const outputImageData = outputCtx.createImageData(width, height);
 
   const originalPixels = originalImageData.data;
   const outputPixels = outputImageData.data;
-  const softColorPixels = softColorImageData.data;
+  const colorLayerPixels = colorLayerImageData.data;
   const edgeConnectedWhiteMask = createEdgeConnectedWhiteMask(originalPixels, width, height);
 
   for (let i = 0; i < originalPixels.length; i += 4) {
@@ -226,32 +231,27 @@ const cleanGeneratedImageWithOriginalDetails = async (originalSrc, generatedSrc)
     }
 
     const originalLuma = 0.2126 * originalR + 0.7152 * originalG + 0.0722 * originalB;
-    const softR = softColorPixels[i];
-    const softG = softColorPixels[i + 1];
-    const softB = softColorPixels[i + 2];
-    const softLuma = 0.2126 * softR + 0.7152 * softG + 0.0722 * softB;
-    const lumaLift = Math.max(0, COLOR_WASH_MIN_LUMA - softLuma);
-    const washR = Math.min(255, softR + lumaLift);
-    const washG = Math.min(255, softG + lumaLift);
-    const washB = Math.min(255, softB + lumaLift);
-
-    outputPixels[i] = Math.round(originalR * (1 - COLOR_WASH_STRENGTH) + washR * COLOR_WASH_STRENGTH);
-    outputPixels[i + 1] = Math.round(originalG * (1 - COLOR_WASH_STRENGTH) + washG * COLOR_WASH_STRENGTH);
-    outputPixels[i + 2] = Math.round(originalB * (1 - COLOR_WASH_STRENGTH) + washB * COLOR_WASH_STRENGTH);
-
-    const lineStrength = clamp(
-      (ORIGINAL_DETAIL_LUMA_THRESHOLD - originalLuma) /
-        (ORIGINAL_DETAIL_LUMA_THRESHOLD - ORIGINAL_DETAIL_FULL_STRENGTH_LUMA),
-      0,
-      1
-    );
-
-    if (lineStrength > 0) {
-      const restoreStrength = Math.min(lineStrength, ORIGINAL_DETAIL_MAX_RESTORE_STRENGTH);
-      outputPixels[i] = Math.round(outputPixels[i] * (1 - restoreStrength) + originalR * restoreStrength);
-      outputPixels[i + 1] = Math.round(outputPixels[i + 1] * (1 - restoreStrength) + originalG * restoreStrength);
-      outputPixels[i + 2] = Math.round(outputPixels[i + 2] * (1 - restoreStrength) + originalB * restoreStrength);
+    if (originalLuma <= ORIGINAL_DETAIL_LUMA_THRESHOLD) {
+      outputPixels[i] = originalR;
+      outputPixels[i + 1] = originalG;
+      outputPixels[i + 2] = originalB;
+      outputPixels[i + 3] = originalA;
+      continue;
     }
+
+    const colorR = colorLayerPixels[i];
+    const colorG = colorLayerPixels[i + 1];
+    const colorB = colorLayerPixels[i + 2];
+    const colorLuma = 0.2126 * colorR + 0.7152 * colorG + 0.0722 * colorB;
+    const lumaLift = Math.max(0, COLOR_WASH_MIN_LUMA - colorLuma);
+    const washR = Math.min(255, colorR + lumaLift);
+    const washG = Math.min(255, colorG + lumaLift);
+    const washB = Math.min(255, colorB + lumaLift);
+    const localWashStrength = COLOR_WASH_STRENGTH * clamp((originalLuma - ORIGINAL_DETAIL_LUMA_THRESHOLD) / 45, 0.2, 1);
+
+    outputPixels[i] = Math.round(originalR * (1 - localWashStrength) + washR * localWashStrength);
+    outputPixels[i + 1] = Math.round(originalG * (1 - localWashStrength) + washG * localWashStrength);
+    outputPixels[i + 2] = Math.round(originalB * (1 - localWashStrength) + washB * localWashStrength);
     outputPixels[i + 3] = originalA;
   }
 
