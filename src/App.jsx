@@ -95,9 +95,11 @@ const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 const IMAGE_MODEL = "gpt-image-2";
 const IMAGE_QUALITY = "auto";
 const MAX_GENERATION_ATTEMPTS = 2;
-const ORIGINAL_LINE_LUMA_THRESHOLD = 245;
-const ORIGINAL_LINE_FULL_STRENGTH_LUMA = 165;
-const COLOR_LAYER_MAX_SATURATION = 0.45;
+const ORIGINAL_LINE_LUMA_THRESHOLD = 205;
+const ORIGINAL_LINE_FULL_STRENGTH_LUMA = 85;
+const COLOR_LAYER_MAX_SATURATION = 0.82;
+const COLOR_LAYER_MIN_SATURATION = 0.18;
+const COLOR_LAYER_SATURATION_BOOST = 1.9;
 
 const loadImageFromDataUrl = (src) => new Promise((resolve, reject) => {
   const img = new Image();
@@ -209,14 +211,23 @@ const preserveOriginalWithColorLayer = async (originalSrc, generatedSrc) => {
       1
     );
 
-    const [colorHue, colorSaturation] = rgbToHsl(
+    const [colorHue, colorSaturation, colorLightness] = rgbToHsl(
       colorPixels[i],
       colorPixels[i + 1],
       colorPixels[i + 2]
     );
-    const targetLightness = 0.88 - (1 - originalLuma / 255) * 0.28;
-    const targetSaturation = Math.min(colorSaturation * 0.8, COLOR_LAYER_MAX_SATURATION);
-    const [fillR, fillG, fillB] = hslToRgb(colorHue, targetSaturation, clamp(targetLightness, 0.56, 0.92));
+    const hasMeaningfulColor = colorSaturation > 0.035;
+    const targetLightness = hasMeaningfulColor
+      ? clamp(colorLightness * 0.75 + 0.14, 0.5, 0.88)
+      : clamp(originalLuma / 255, 0.72, 0.96);
+    const targetSaturation = hasMeaningfulColor
+      ? clamp(
+          colorSaturation * COLOR_LAYER_SATURATION_BOOST,
+          COLOR_LAYER_MIN_SATURATION,
+          COLOR_LAYER_MAX_SATURATION
+        )
+      : 0;
+    const [fillR, fillG, fillB] = hslToRgb(colorHue, targetSaturation, targetLightness);
 
     outputPixels[i] = Math.round(fillR * (1 - lineStrength) + originalR * lineStrength);
     outputPixels[i + 1] = Math.round(fillG * (1 - lineStrength) + originalG * lineStrength);
