@@ -219,18 +219,6 @@ function App() {
     }
   };
 
-  const handleRemoveUpload = (e) => {
-    e.stopPropagation();
-    setImageFile(null);
-    setImagePreview(null);
-    setShowUploadPreview(false);
-    setIsRotatingUpload(false);
-    setErrorMsg("");
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
   const handleRotateUpload = async (e, degrees) => {
     if (e) e.stopPropagation();
     if (!imagePreview || isRotatingUpload) return;
@@ -512,15 +500,17 @@ function App() {
                       <h3>{style.name}</h3>
                       <p>{style.description}</p>
                       {style.previewImage && (
-                        <div
-                          style={{ marginTop: '10px', fontSize: '0.8rem', color: '#888', textDecoration: 'underline', cursor: 'pointer' }}
+                        <button
+                          type="button"
+                          className="style-example-link"
                           onClick={(e) => {
                             e.stopPropagation();
+                            e.currentTarget.blur();
                             setStylePreviewIndex(idx);
                           }}
                         >
                           View Example
-                        </div>
+                        </button>
                       )}
                     </div>
                   </div>
@@ -590,14 +580,6 @@ function App() {
                           </svg>
                         </button>
                       </div>
-                      <button
-                        type="button"
-                        className="remove-upload-btn"
-                        aria-label="Remove uploaded floorplan"
-                        onClick={handleRemoveUpload}
-                      >
-                        ×
-                      </button>
                     </div>
                   ) : (
                     <>
@@ -679,7 +661,6 @@ function App() {
           <div className="lightbox-overlay" onClick={() => setShowUploadPreview(false)}>
             <div className="lightbox-content upload-preview-lightbox" onClick={e => e.stopPropagation()}>
               <button className="lightbox-close" onClick={() => setShowUploadPreview(false)}>✕</button>
-              <div className="compare-label">Uploaded Floorplan</div>
               <div className="upload-preview-stage">
                 <img src={imagePreview} alt="Uploaded floorplan preview" className="upload-preview-large" />
               </div>
