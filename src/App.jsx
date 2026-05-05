@@ -48,7 +48,6 @@ Take the provided black-and-white floorplan or 3D render and **apply color only*
 * **No new lines, edges, shapes, boundaries, or subdivisions may be introduced**
 * **No existing lines or details may be altered, enhanced, thickened, or stylized**
 * **No interpretation, cleanup, or improvement is allowed**
-* **No text labels should be added to the final image (remove text labels from plan only)**
  
 **CRITICAL:**
 
@@ -56,10 +55,12 @@ Take the provided black-and-white floorplan or 3D render and **apply color only*
 * **Do NOT split, segment, outline, frame, border, or decorate any region internally**
 * **Do NOT create contrast edges, bands, trims, borders, or framing effects inside any wall or surface**
 * **Do NOT add light fixtures, or any element not in the original**
-* **Do NOT add plants, furniture, decor, people, equipment, signage, labels, icons, logos, or objects of any kind**
+* **Do NOT add any new objects, including plants, furniture, decor, people, equipment, signage, labels, icons, or logos**
 * **Do NOT generate fake text, pseudo-text, blurry labels, shadow text, or duplicate labels**
 * **Do NOT remove logo box and/or frame if it is present in the original image**
-* **No text labels should be added to the final image (remove text labels from plan only)**
+* **Remove all architectural annotations and plan labels that are overlaid on floors, open areas, or drawings (e.g., material notes, room labels, dimension text, and construction notes such as "Vinyl Plank").
+
+* **Preserve only environmental signage that is physically part of the space (e.g., wall-mounted signage, branding, names like "Vision Center").**
 
 If any new visual separation or edge appears that is not in the original, the result is incorrect.
 
@@ -74,8 +75,10 @@ If any new visual separation or edge appears that is not in the original, the re
 
 ### **TEXT + LINEWORK**
 
-* **No text labels should be added to the final image (remove text labels from plan only)**
-* All linework must remain **exactly as-is**
+- Remove architectural annotations and plan labels only
+- Preserve environmental signage exactly as-is (position, style, clarity)
+- Do not modify, restyle, or replace any preserved text
+- All linework must remain exactly as-is
 
 ---
 
