@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react';
-import OpenAI from 'openai';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import './App.css';
@@ -93,9 +92,6 @@ If any new visual separation or edge appears that is not in the original, the re
 * Removing color should return the exact original with no differences
 * Any edge, border, or contrast line not present in the original must be removed.`;
 
-const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
-const IMAGE_MODEL = "gpt-image-2";
-const IMAGE_QUALITY = "auto";
 const MAX_GENERATION_ATTEMPTS = 2;
 
 const loadImage = (src) => new Promise((resolve, reject) => {
@@ -389,8 +385,6 @@ function App() {
       console.log(finalPrompt);
       console.log("============================================================");
 
-      const openai = new OpenAI({ apiKey: API_KEY || 'server-proxy', dangerouslyAllowBrowser: true, baseURL: window.location.origin + '/v1', maxRetries: 0 });
-
       console.log("Calling OpenAI Responses API in parallel...");
       const startedAt = performance.now();
 
@@ -400,36 +394,26 @@ function App() {
         for (let attempt = 1; attempt <= MAX_GENERATION_ATTEMPTS; attempt++) {
           try {
             console.log(`Variation ${idx + 1}: starting attempt ${attempt}`);
-            const response = await openai.responses.create({
-              model: "gpt-4o",
-              input: [
-                {
-                  role: "user",
-                  content: [
-                    { type: "input_text", text: finalPrompt + "\n\nCRITICAL REQUIREMENT: You MUST use the image_generation tool to output the requested image. Do not return text." },
-                    { type: "input_image", image_url: imagePreview }
-                  ]
-                }
-              ],
-              tools: [
-                {
-                  type: "image_generation",
-                  action: "edit",
-                  model: IMAGE_MODEL,
-                  quality: IMAGE_QUALITY,
-                  size: "auto"
-                }
-              ],
-              tool_choice: { type: "image_generation" }
+            const response = await fetch('/api/generate', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                prompt: finalPrompt,
+                image: imagePreview
+              })
             });
 
-            const imageData = (response.output || [])
-              .filter((output) => output.type === "image_generation_call")
-              .map((output) => output.result);
+            const responseBody = await response.json().catch(() => null);
 
-            if (imageData && imageData.length > 0 && imageData[0]) {
+            if (!response.ok) {
+              throw new Error(responseBody?.error || `Generation request failed with status ${response.status}`);
+            }
+
+            if (responseBody?.image) {
               console.log(`Variation ${idx + 1}: completed in ${Math.round((performance.now() - startedAt) / 1000)}s`);
-              return `data:image/png;base64,${imageData[0]}`;
+              return `data:image/png;base64,${responseBody.image}`;
             }
 
             throw new Error("No image data returned from API.");
