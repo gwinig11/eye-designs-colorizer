@@ -222,6 +222,74 @@ body {
   border-radius: 8px;
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
   object-fit: contain;
+  cursor: zoom-in;
+}
+
+.upload-tools {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  gap: 8px;
+  opacity: 1;
+  transform: none;
+  transition: none;
+  z-index: 5;
+}
+
+.upload-tool-btn,
+.remove-upload-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.2s ease;
+}
+
+.upload-tool-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+}
+
+.remove-upload-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 1.35rem;
+  line-height: 1;
+  opacity: 0;
+  transform: scale(0.92);
+  z-index: 2;
+}
+
+.upload-area:hover .remove-upload-btn,
+.remove-upload-btn:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.upload-tool-btn:hover:not(:disabled),
+.upload-tool-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+  outline: none;
+}
+
+.upload-tool-btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.remove-upload-btn:hover,
+.remove-upload-btn:focus-visible {
+  background: rgba(190, 45, 45, 0.95);
+  outline: none;
 }
 
 .btn-generate {
@@ -400,6 +468,64 @@ body {
   border-radius: 8px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
   object-fit: contain;
+}
+
+.upload-preview-lightbox {
+  width: min(94vw, 1200px);
+  max-height: 92vh;
+}
+
+.upload-preview-stage {
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-preview-large {
+  max-width: 100%;
+  max-height: 78vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.upload-preview-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.upload-preview-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.upload-preview-action-btn:hover:not(:disabled),
+.upload-preview-action-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.5);
+  outline: none;
+}
+
+.upload-preview-action-btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .compare-stage {

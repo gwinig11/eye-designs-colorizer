@@ -49,8 +49,8 @@ Take the provided black-and-white floorplan or 3D render and **apply color only*
 * **No new lines, edges, shapes, boundaries, or subdivisions may be introduced**
 * **No existing lines or details may be altered, enhanced, thickened, or stylized**
 * **No interpretation, cleanup, or improvement is allowed**
-* **No text labels should be added to the final image**
-
+* **No text labels should be added to the final image (remove text labels from plan only)**
+ 
 **CRITICAL:**
 
 * Each enclosed region must remain a **single uninterrupted area**
@@ -60,7 +60,7 @@ Take the provided black-and-white floorplan or 3D render and **apply color only*
 * **Do NOT add plants, furniture, decor, people, equipment, signage, labels, icons, logos, or objects of any kind**
 * **Do NOT generate fake text, pseudo-text, blurry labels, shadow text, or duplicate labels**
 * **Do NOT remove logo box and/or frame if it is present in the original image**
-* **No text labels should be added to the final image**
+* **No text labels should be added to the final image (remove text labels from plan only)**
 
 If any new visual separation or edge appears that is not in the original, the result is incorrect.
 
@@ -73,9 +73,9 @@ If any new visual separation or edge appears that is not in the original, the re
 
 ---
 
-### **TEXT + LINEWORK (LOCKED)**
+### **TEXT + LINEWORK**
 
-* All text, labels, symbols, and dimensions must remain **pixel-identical**
+* **No text labels should be added to the final image (remove text labels from plan only)**
 * All linework must remain **exactly as-is**
 
 ---
@@ -98,12 +98,63 @@ const IMAGE_MODEL = "gpt-image-2";
 const IMAGE_QUALITY = "auto";
 const MAX_GENERATION_ATTEMPTS = 2;
 
+const loadImage = (src) => new Promise((resolve, reject) => {
+  const image = new Image();
+  image.onload = () => resolve(image);
+  image.onerror = reject;
+  image.src = src;
+});
+
+const rotateDataUrl = async (dataUrl, degrees) => {
+  const image = await loadImage(dataUrl);
+  const normalizedDegrees = ((degrees % 360) + 360) % 360;
+  const quarterTurn = normalizedDegrees === 90 || normalizedDegrees === 270;
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+
+  canvas.width = quarterTurn ? image.naturalHeight : image.naturalWidth;
+  canvas.height = quarterTurn ? image.naturalWidth : image.naturalHeight;
+
+  context.translate(canvas.width / 2, canvas.height / 2);
+  context.rotate((normalizedDegrees * Math.PI) / 180);
+  context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
+
+  return canvas.toDataURL('image/png');
+};
+
+const imageFileToDataUrl = async (file) => {
+  if ('createImageBitmap' in window) {
+    try {
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      context.drawImage(bitmap, 0, 0);
+      bitmap.close();
+
+      return canvas.toDataURL('image/png');
+    } catch (err) {
+      console.warn("Browser image orientation normalization failed, using FileReader fallback:", err);
+    }
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
 function App() {
-  const [selectedStyleIndex, setSelectedStyleIndex] = useState(null);
+  const [selectedStyleIndex, setSelectedStyleIndex] = useState(0);
   const [specialInstructions, setSpecialInstructions] = useState("");
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [dragActive, setDragActive] = useState(false);
+  const [isRotatingUpload, setIsRotatingUpload] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [resultImages, setResultImages] = useState([]);
   const numVariations = 3;
@@ -111,6 +162,7 @@ function App() {
   const [showOriginalCompare, setShowOriginalCompare] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [stylePreviewIndex, setStylePreviewIndex] = useState(null);
+  const [showUploadPreview, setShowUploadPreview] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -118,6 +170,7 @@ function App() {
       if (e.key === 'Escape') {
         setStylePreviewIndex(null);
         setLightboxIndex(null);
+        setShowUploadPreview(false);
       } else if (e.key === 'ArrowRight') {
         if (stylePreviewIndex !== null) {
           setStylePreviewIndex((prev) => {
@@ -163,6 +216,35 @@ function App() {
     e.preventDefault();
     if (e.target.files && e.target.files[0]) {
       handleFile(e.target.files[0]);
+    }
+  };
+
+  const handleRemoveUpload = (e) => {
+    e.stopPropagation();
+    setImageFile(null);
+    setImagePreview(null);
+    setShowUploadPreview(false);
+    setIsRotatingUpload(false);
+    setErrorMsg("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleRotateUpload = async (e, degrees) => {
+    if (e) e.stopPropagation();
+    if (!imagePreview || isRotatingUpload) return;
+
+    setIsRotatingUpload(true);
+    setErrorMsg("");
+    try {
+      const rotatedImage = await rotateDataUrl(imagePreview, degrees);
+      setImagePreview(rotatedImage);
+    } catch (err) {
+      console.error("Failed to rotate upload:", err);
+      setErrorMsg("Failed to rotate the uploaded floorplan.");
+    } finally {
+      setIsRotatingUpload(false);
     }
   };
 
@@ -215,11 +297,13 @@ function App() {
     }
     setImageFile(file);
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setImagePreview(e.target.result);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const imageUrl = await imageFileToDataUrl(file);
+        setImagePreview(imageUrl);
+      } catch (err) {
+        setErrorMsg("Failed to read image.");
+        console.error(err);
+      }
     }
   };
 
@@ -478,7 +562,42 @@ function App() {
                   />
                   {imagePreview ? (
                     <div style={{ position: 'absolute', top: 15, left: 15, right: 15, bottom: 15, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <img src={imagePreview} alt="Preview" className="preview-image" />
+                      <img
+                        src={imagePreview}
+                        alt="Preview"
+                        className="preview-image"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowUploadPreview(true);
+                        }}
+                      />
+                      <div className="upload-tools" aria-label="Floorplan preview controls">
+                        <button
+                          type="button"
+                          className="upload-tool-btn"
+                          aria-label="Preview floorplan larger"
+                          title="Preview larger"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowUploadPreview(true);
+                          }}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M15 3h6v6"></path>
+                            <path d="M21 3l-7 7"></path>
+                            <path d="M9 21H3v-6"></path>
+                            <path d="M3 21l7-7"></path>
+                          </svg>
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        className="remove-upload-btn"
+                        aria-label="Remove uploaded floorplan"
+                        onClick={handleRemoveUpload}
+                      >
+                        ×
+                      </button>
                     </div>
                   ) : (
                     <>
@@ -501,7 +620,7 @@ function App() {
             <button
               className="btn-generate"
               onClick={handleGenerate}
-              disabled={!imagePreview || isGenerating || selectedStyleIndex === null}
+              disabled={!imagePreview || isGenerating || isRotatingUpload || selectedStyleIndex === null}
             >
               {isGenerating ? (
                 <>
@@ -554,6 +673,45 @@ function App() {
             )}
           </div>
         </div>
+
+        {/* Uploaded Floorplan Preview */}
+        {showUploadPreview && imagePreview && (
+          <div className="lightbox-overlay" onClick={() => setShowUploadPreview(false)}>
+            <div className="lightbox-content upload-preview-lightbox" onClick={e => e.stopPropagation()}>
+              <button className="lightbox-close" onClick={() => setShowUploadPreview(false)}>✕</button>
+              <div className="compare-label">Uploaded Floorplan</div>
+              <div className="upload-preview-stage">
+                <img src={imagePreview} alt="Uploaded floorplan preview" className="upload-preview-large" />
+              </div>
+              <div className="upload-preview-actions">
+                <button
+                  type="button"
+                  className="upload-preview-action-btn"
+                  onClick={(e) => handleRotateUpload(e, -90)}
+                  disabled={isRotatingUpload}
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                    <path d="M3 3v5h5"></path>
+                  </svg>
+                  Rotate Left
+                </button>
+                <button
+                  type="button"
+                  className="upload-preview-action-btn"
+                  onClick={(e) => handleRotateUpload(e, 90)}
+                  disabled={isRotatingUpload}
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                    <path d="M21 3v5h-5"></path>
+                  </svg>
+                  Rotate Right
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Style Preview Lightbox */}
         {stylePreviewIndex !== null && (
