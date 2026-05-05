@@ -389,7 +389,7 @@ function App() {
       console.log(finalPrompt);
       console.log("============================================================");
 
-      const openai = new OpenAI({ apiKey: API_KEY || 'server-proxy', dangerouslyAllowBrowser: true, baseURL: window.location.origin + '/v1' });
+      const openai = new OpenAI({ apiKey: API_KEY || 'server-proxy', dangerouslyAllowBrowser: true, baseURL: window.location.origin + '/v1', maxRetries: 0 });
 
       console.log("Calling OpenAI Responses API in parallel...");
       const startedAt = performance.now();

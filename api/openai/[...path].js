@@ -1,4 +1,9 @@
 export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '25mb'
+    }
+  },
   maxDuration: 60
 };
 
@@ -11,9 +16,8 @@ export default async function handler(req, res) {
 
   const path = Array.isArray(req.query.path) ? req.query.path.join('/') : req.query.path;
   const apiKey = process.env.OPENAI_API_KEY;
-  const authorization = apiKey ? `Bearer ${apiKey}` : req.headers.authorization;
 
-  if (!authorization) {
+  if (!apiKey) {
     return res.status(500).json({ error: 'Missing OPENAI_API_KEY server environment variable.' });
   }
 
@@ -21,7 +25,7 @@ export default async function handler(req, res) {
     const upstreamResponse = await fetch(`https://api.openai.com/v1/${path}`, {
       method: req.method,
       headers: {
-        'Authorization': authorization,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': req.headers['content-type'] || 'application/json'
       },
       body: req.method === 'GET' || req.method === 'HEAD' ? undefined : JSON.stringify(req.body)
@@ -29,6 +33,10 @@ export default async function handler(req, res) {
 
     const contentType = upstreamResponse.headers.get('content-type') || 'application/json';
     const body = await upstreamResponse.text();
+
+    if (!upstreamResponse.ok) {
+      console.error(`OpenAI upstream ${upstreamResponse.status} for /v1/${path}:`, body);
+    }
 
     res.status(upstreamResponse.status);
     res.setHeader('Content-Type', contentType);
