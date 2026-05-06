@@ -325,9 +325,9 @@ function App() {
         e.preventDefault();
         setShowOriginalCompare((prev) => !prev);
       } else if (e.key === 'ArrowRight') {
-        setShowOriginalCompare(false);
+        nextLightbox();
       } else if (e.key === 'ArrowLeft') {
-        setShowOriginalCompare(true);
+        prevLightbox();
       }
     };
 
@@ -505,29 +505,36 @@ function App() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '15px' }}>
+            <div className="setup-stack">
               {/* Special Instructions */}
-              <div className="instructions-section" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="instructions-section">
                 <h2>2. Special Instructions</h2>
                 <textarea
                   className="instructions-input"
                   placeholder="Special Instructions (Optional)"
                   value={specialInstructions}
                   onChange={(e) => setSpecialInstructions(e.target.value)}
-                  style={{ resize: 'vertical', height: '100%', minHeight: '130px' }}
+                  style={{ resize: 'vertical', minHeight: '95px' }}
                 />
               </div>
 
               {/* Upload Area */}
-              <div className="upload-section" style={{ pointerEvents: isGenerating ? 'none' : 'auto', display: 'flex', flexDirection: 'column', height: '100%' }}>
-                <h2>3. Upload Floorplan</h2>
+              <div className="upload-section" style={{ pointerEvents: isGenerating ? 'none' : 'auto' }}>
+                <h2>3. {imagePreview ? 'Review Floorplan' : 'Upload Floorplan'}</h2>
                 <div
-                  className={`upload-area ${dragActive ? 'drag-active' : ''}`}
+                  className={`upload-area ${imagePreview ? 'has-preview' : ''} ${dragActive ? 'drag-active' : ''}`}
                   onDragEnter={isGenerating ? undefined : handleDrag}
                   onDragLeave={isGenerating ? undefined : handleDrag}
                   onDragOver={isGenerating ? undefined : handleDrag}
                   onDrop={isGenerating ? undefined : handleDrop}
-                  onClick={() => !isGenerating && fileInputRef.current.click()}
+                  onClick={() => {
+                    if (isGenerating) return;
+                    if (imagePreview) {
+                      setShowUploadPreview(true);
+                    } else {
+                      fileInputRef.current.click();
+                    }
+                  }}
                   style={{ flex: 1, justifyContent: 'center' }}
                 >
                   <input
@@ -552,6 +559,22 @@ function App() {
                         <button
                           type="button"
                           className="upload-tool-btn"
+                          aria-label="Replace floorplan"
+                          title="Replace floorplan"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            fileInputRef.current.click();
+                          }}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          className="upload-tool-btn"
                           aria-label="Preview floorplan larger"
                           title="Preview larger"
                           onClick={(e) => {
@@ -567,6 +590,9 @@ function App() {
                           </svg>
                         </button>
                       </div>
+                      {isRotatingUpload && (
+                        <div className="upload-rotation-status">Rotating...</div>
+                      )}
                     </div>
                   ) : (
                     <>
@@ -582,6 +608,34 @@ function App() {
                     </>
                   )}
                 </div>
+                {imagePreview && (
+                  <div className="upload-review-actions" aria-label="Floorplan review controls">
+                    <button
+                      type="button"
+                      className="upload-review-btn"
+                      onClick={(e) => handleRotateUpload(e, -90)}
+                      disabled={isRotatingUpload}
+                    >
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                        <path d="M3 3v5h5"></path>
+                      </svg>
+                      Rotate Left
+                    </button>
+                    <button
+                      type="button"
+                      className="upload-review-btn"
+                      onClick={(e) => handleRotateUpload(e, 90)}
+                      disabled={isRotatingUpload}
+                    >
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                        <path d="M21 3v5h-5"></path>
+                      </svg>
+                      Rotate Right
+                    </button>
+                  </div>
+                )}
                 {errorMsg && <p style={{ color: '#ff6b6b', marginTop: '10px' }}>{errorMsg}</p>}
               </div>
             </div>
@@ -741,7 +795,7 @@ function App() {
           <div className="lightbox-overlay" onClick={closeLightbox}>
 
             {resultImages.length > 1 && (
-              <button className="lightbox-nav prev" onClick={prevLightbox}>❮</button>
+              <button className="lightbox-nav prev" onClick={prevLightbox} aria-label="Previous result"></button>
             )}
 
             <div className="lightbox-content" onClick={e => e.stopPropagation()}>
@@ -791,7 +845,7 @@ function App() {
             </div>
 
             {resultImages.length > 1 && (
-              <button className="lightbox-nav next" onClick={nextLightbox}>❯</button>
+              <button className="lightbox-nav next" onClick={nextLightbox} aria-label="Next result"></button>
             )}
 
           </div>

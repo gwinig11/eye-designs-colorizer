@@ -95,10 +95,34 @@ body {
   .main-layout {
     grid-template-columns: 1fr;
   }
+
+  .upload-area.has-preview {
+    min-height: 240px;
+  }
+
+  .upload-review-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .upload-review-btn {
+    min-height: 42px;
+  }
 }
 
 .style-section,
 .upload-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.setup-stack {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 15px;
+  margin-top: 15px;
+}
+
+.instructions-section {
   display: flex;
   flex-direction: column;
 }
@@ -227,6 +251,13 @@ body {
   gap: 6px;
 }
 
+.upload-area.has-preview {
+  min-height: 380px;
+  border-style: solid;
+  border-color: #555;
+  background: #151515;
+}
+
 .upload-area:hover,
 .upload-area.drag-active {
   border-color: #fff;
@@ -251,6 +282,7 @@ body {
   top: 0;
   left: 0;
   display: flex;
+  flex-direction: column;
   gap: 8px;
   opacity: 1;
   transform: none;
@@ -284,6 +316,71 @@ body {
 .upload-tool-btn:disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+.upload-rotation-status {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.82);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 8px 10px;
+}
+
+.upload-review-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.upload-review-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  border: 1px solid #4a4a4a;
+  border-radius: 8px;
+  background: #1a1a1a;
+  color: #f5f5f5;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0 10px;
+  white-space: nowrap;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.upload-review-btn.primary {
+  background: #fff;
+  border-color: #fff;
+  color: #000;
+}
+
+.upload-review-btn:hover:not(:disabled),
+.upload-review-btn:focus-visible {
+  border-color: #fff;
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.upload-review-btn:not(.primary):hover:not(:disabled),
+.upload-review-btn:not(.primary):focus-visible {
+  background: #252525;
+}
+
+.upload-review-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+  transform: none;
 }
 
 .btn-generate {
@@ -573,6 +670,11 @@ body {
   z-index: 10;
 }
 
+.lightbox-nav::before {
+  display: block;
+  line-height: 1;
+}
+
 .lightbox-nav:hover {
   background: rgba(255, 255, 255, 0.2);
 }
@@ -581,8 +683,16 @@ body {
   left: 10px;
 }
 
+.lightbox-nav.prev::before {
+  content: "\2039";
+}
+
 .lightbox-nav.next {
   right: 10px;
+}
+
+.lightbox-nav.next::before {
+  content: "\203A";
 }
 
 .lightbox-footer {
@@ -656,5 +766,17 @@ body {
 @media (max-width: 900px) {
   .main-layout {
     grid-template-columns: 1fr;
+  }
+
+  .upload-area.has-preview {
+    min-height: 260px;
+  }
+
+  .upload-review-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .upload-review-btn {
+    min-height: 42px;
   }
 }
