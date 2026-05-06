@@ -715,6 +715,11 @@ body {
   content: "\203A";
 }
 
+.lightbox-nav.style-preview-nav.prev::before,
+.lightbox-nav.style-preview-nav.next::before {
+  content: none;
+}
+
 .lightbox-footer {
   margin-top: 20px;
   display: flex;

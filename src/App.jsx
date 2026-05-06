@@ -738,7 +738,7 @@ function App() {
         {/* Style Preview Lightbox */}
         {stylePreviewIndex !== null && (
           <div className="lightbox-overlay" onClick={() => setStylePreviewIndex(null)}>
-            <button className="lightbox-nav prev" onClick={(e) => {
+            <button className="lightbox-nav style-preview-nav prev" onClick={(e) => {
               e.stopPropagation();
               setStylePreviewIndex((prev) => {
                 let next = (prev - 1 + STYLES.length) % STYLES.length;
@@ -779,7 +779,7 @@ function App() {
               </div>
             </div>
 
-            <button className="lightbox-nav next" onClick={(e) => {
+            <button className="lightbox-nav style-preview-nav next" onClick={(e) => {
               e.stopPropagation();
               setStylePreviewIndex((prev) => {
                 let next = (prev + 1) % STYLES.length;
