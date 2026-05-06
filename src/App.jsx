@@ -659,7 +659,7 @@ function App() {
           <div className="right-column">
             {/* Results Area */}
             {resultImages.length > 0 ? (
-              <div className="section results-area" id="results" style={{ height: '100%' }}>
+              <div className="section results-area" id="results">
                 <h2>Colorized Result{resultImages.length > 1 ? 's' : ''}</h2>
                 <p className="results-note">Results may contain differences from original, click compare to check accuracy</p>
                 <div className="results-grid">
@@ -685,7 +685,7 @@ function App() {
                 </div>
               </div>
             ) : (
-              <div className="section placeholder-area" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed #444', borderRadius: '12px', color: '#888', minHeight: '400px' }}>
+              <div className="section placeholder-area">
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '15px' }}>
                   <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                   <circle cx="8.5" cy="8.5" r="1.5"></circle>
