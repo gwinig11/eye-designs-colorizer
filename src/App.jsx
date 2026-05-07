@@ -97,6 +97,15 @@ If any new visual separation or edge appears that is not in the original, the re
 
 const MAX_GENERATION_ATTEMPTS = 2;
 
+const shouldRetryGeneration = (status) => {
+  if (status === 504) return false;
+  return status === 408 || status === 429 || (status >= 500 && status < 600);
+};
+
+const createGenerationRequestId = (generationId, variationNumber, attempt) => (
+  `${generationId}-v${variationNumber}-a${attempt}`
+);
+
 const loadImage = (src) => new Promise((resolve, reject) => {
   const image = new Image();
   image.onload = () => resolve(image);
@@ -390,13 +399,21 @@ function App() {
 
       console.log("Calling OpenAI Responses API in parallel...");
       const startedAt = performance.now();
+      const generationId = `gen-${Date.now().toString(36)}`;
+      console.log(`Generation request group: ${generationId}`);
 
       const generateVariation = async (idx) => {
         let lastError = null;
 
         for (let attempt = 1; attempt <= MAX_GENERATION_ATTEMPTS; attempt++) {
+          const requestId = createGenerationRequestId(generationId, idx + 1, attempt);
+          const attemptStartedAt = performance.now();
+
           try {
-            console.log(`Variation ${idx + 1}: starting attempt ${attempt}`);
+            console.log(`Variation ${idx + 1}: starting attempt ${attempt}`, {
+              requestId,
+              elapsedSinceGroupStartSec: Math.round((attemptStartedAt - startedAt) / 1000)
+            });
             const response = await fetch('/api/generate', {
               method: 'POST',
               headers: {
@@ -404,28 +421,50 @@ function App() {
               },
               body: JSON.stringify({
                 prompt: finalPrompt,
-                image: imagePreview
+                image: imagePreview,
+                requestId
               })
             });
 
             const responseBody = await response.json().catch(() => null);
+            const attemptDurationSec = Math.round((performance.now() - attemptStartedAt) / 1000);
 
             if (!response.ok) {
-              throw new Error(responseBody?.error || `Generation request failed with status ${response.status}`);
+              const error = new Error(responseBody?.error || `Generation request failed with status ${response.status}`);
+              error.status = response.status;
+              error.retryable = shouldRetryGeneration(response.status);
+              error.requestId = responseBody?.requestId || requestId;
+              error.durationMs = responseBody?.durationMs;
+              throw error;
             }
 
             if (responseBody?.image) {
-              console.log(`Variation ${idx + 1}: completed in ${Math.round((performance.now() - startedAt) / 1000)}s`);
+              console.log(`Variation ${idx + 1}: completed`, {
+                requestId: responseBody.requestId || requestId,
+                openaiResponseId: responseBody.responseId,
+                attemptDurationSec,
+                serverDurationSec: responseBody.durationMs ? Math.round(responseBody.durationMs / 1000) : null,
+                elapsedSinceGroupStartSec: Math.round((performance.now() - startedAt) / 1000)
+              });
               return `data:image/png;base64,${responseBody.image}`;
             }
 
             throw new Error("No image data returned from API.");
           } catch (err) {
             lastError = err;
-            console.warn(`Variation ${idx + 1} attempt ${attempt} failed:`, err);
+            console.warn(`Variation ${idx + 1} attempt ${attempt} failed`, {
+              requestId: err.requestId || requestId,
+              status: err.status,
+              retryable: err.retryable !== false,
+              clientDurationSec: Math.round((performance.now() - attemptStartedAt) / 1000),
+              serverDurationSec: err.durationMs ? Math.round(err.durationMs / 1000) : null,
+              message: err.message
+            });
 
-            if (attempt < MAX_GENERATION_ATTEMPTS) {
+            if (attempt < MAX_GENERATION_ATTEMPTS && err.retryable !== false) {
               await new Promise(resolve => setTimeout(resolve, 1000));
+            } else if (attempt < MAX_GENERATION_ATTEMPTS) {
+              break;
             }
           }
         }
