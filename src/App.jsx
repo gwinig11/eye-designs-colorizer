@@ -106,6 +106,11 @@ const createGenerationRequestId = (generationId, variationNumber, attempt) => (
   `${generationId}-v${variationNumber}-a${attempt}`
 );
 
+const logTime = () => ({
+  iso: new Date().toISOString(),
+  local: new Date().toLocaleString()
+});
+
 const loadImage = (src) => new Promise((resolve, reject) => {
   const image = new Image();
   image.onload = () => resolve(image);
@@ -400,7 +405,7 @@ function App() {
       console.log("Calling OpenAI Responses API in parallel...");
       const startedAt = performance.now();
       const generationId = `gen-${Date.now().toString(36)}`;
-      console.log(`Generation request group: ${generationId}`);
+      console.log(`Generation request group: ${generationId}`, logTime());
 
       const generateVariation = async (idx) => {
         let lastError = null;
@@ -412,6 +417,7 @@ function App() {
           try {
             console.log(`Variation ${idx + 1}: starting attempt ${attempt}`, {
               requestId,
+              ...logTime(),
               elapsedSinceGroupStartSec: Math.round((attemptStartedAt - startedAt) / 1000)
             });
             const response = await fetch('/api/generate', {
@@ -442,6 +448,8 @@ function App() {
               console.log(`Variation ${idx + 1}: completed`, {
                 requestId: responseBody.requestId || requestId,
                 openaiResponseId: responseBody.responseId,
+                browserReceivedAt: logTime(),
+                serverCompletedAt: responseBody.completedAt,
                 attemptDurationSec,
                 serverDurationSec: responseBody.durationMs ? Math.round(responseBody.durationMs / 1000) : null,
                 elapsedSinceGroupStartSec: Math.round((performance.now() - startedAt) / 1000)
@@ -456,6 +464,7 @@ function App() {
               requestId: err.requestId || requestId,
               status: err.status,
               retryable: err.retryable !== false,
+              failedAt: logTime(),
               clientDurationSec: Math.round((performance.now() - attemptStartedAt) / 1000),
               serverDurationSec: err.durationMs ? Math.round(err.durationMs / 1000) : null,
               message: err.message
@@ -483,7 +492,7 @@ function App() {
       const failedResults = settledResults.filter((result) => result.status === "rejected");
 
       if (validResults.length > 0) {
-        console.log(`Successfully retrieved ${validResults.length} image(s) in ${Math.round((performance.now() - startedAt) / 1000)}s.`);
+        console.log(`Successfully retrieved ${validResults.length} image(s) in ${Math.round((performance.now() - startedAt) / 1000)}s.`, logTime());
         setResultImages(validResults);
 
         if (failedResults.length > 0) {

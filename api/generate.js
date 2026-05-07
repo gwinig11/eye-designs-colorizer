@@ -16,6 +16,8 @@ const TEXT_MODEL = "gpt-4o";
 
 const nowMs = () => Date.now();
 
+const timestamp = () => new Date().toISOString();
+
 const estimateBase64Bytes = (dataUrl = "") => {
   const base64 = dataUrl.includes(",") ? dataUrl.split(",").pop() : dataUrl;
   return Math.round((base64.length * 3) / 4);
@@ -43,6 +45,7 @@ export default async function handler(req, res) {
   try {
     console.log('[generate] start', {
       requestId: generationRequestId,
+      timestamp: timestamp(),
       textModel: TEXT_MODEL,
       imageModel: IMAGE_MODEL,
       imageQuality: IMAGE_QUALITY,
@@ -84,6 +87,7 @@ export default async function handler(req, res) {
       console.error('[generate] no image data', {
         requestId: generationRequestId,
         responseId: response.id,
+        timestamp: timestamp(),
         durationMs: openaiDurationMs,
         outputTypes: (response.output || []).map((output) => output.type)
       });
@@ -93,6 +97,7 @@ export default async function handler(req, res) {
     console.log('[generate] complete', {
       requestId: generationRequestId,
       responseId: response.id,
+      timestamp: timestamp(),
       durationMs: openaiDurationMs,
       outputTypes: (response.output || []).map((output) => output.type),
       outputImageApproxBytes: estimateBase64Bytes(imageData[0])
@@ -102,6 +107,7 @@ export default async function handler(req, res) {
       image: imageData[0],
       requestId: generationRequestId,
       responseId: response.id,
+      completedAt: timestamp(),
       durationMs: openaiDurationMs
     });
   } catch (err) {
@@ -111,6 +117,7 @@ export default async function handler(req, res) {
 
     console.error('[generate] failed', {
       requestId: generationRequestId,
+      timestamp: timestamp(),
       status,
       message,
       type: err.error?.type,
