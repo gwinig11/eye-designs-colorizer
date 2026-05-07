@@ -559,7 +559,7 @@ function App() {
 
               {/* Upload Area */}
               <div className="upload-section" style={{ pointerEvents: isGenerating ? 'none' : 'auto' }}>
-                <h2>3. {imagePreview ? 'Review Floorplan' : 'Upload Floorplan'}</h2>
+                <h2>3. Upload Floorplan</h2>
                 <div
                   className={`upload-area ${imagePreview ? 'has-preview' : ''} ${dragActive ? 'drag-active' : ''}`}
                   onDragEnter={isGenerating ? undefined : handleDrag}
