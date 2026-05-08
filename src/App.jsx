@@ -38,7 +38,7 @@ const STYLES = [
 
 const MAIN_PROMPT_TEMPLATE = `## **Ultra-Strict Floorplan Colorization Prompt (No Internal Detail Allowed)**
 
-Take the provided black-and-white floorplan or 3D render and **apply color only**.
+Take the provided black-and-white floorplan or 3D render of an Eye Doctors office and **apply color only**.
 
 ---
 
@@ -59,6 +59,8 @@ Take the provided black-and-white floorplan or 3D render and **apply color only*
 * **Do NOT generate fake text, pseudo-text, blurry labels, shadow text, or duplicate labels**
 * **Do NOT remove logo box and/or frame if it is present in the original image**
 * **Remove all architectural annotations and plan labels that are overlaid on floors, open areas, or drawings (e.g., material notes, room labels, dimension text, and construction notes such as "Vinyl Plank").
+* **Wall displays are almost always *Frame Dispalys* do not turn them into plants. This is an eye doctors office.
+
 
 * **Preserve only environmental signage that is physically part of the space (e.g., wall-mounted signage, branding, names like "Vision Center").**
 
