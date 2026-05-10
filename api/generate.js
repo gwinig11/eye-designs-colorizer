@@ -23,6 +23,42 @@ const estimateBase64Bytes = (dataUrl = "") => {
   return Math.round((base64.length * 3) / 4);
 };
 
+const createImageGenerationParams = (prompt, image, stream = false) => ({
+  model: TEXT_MODEL,
+  input: [
+    {
+      role: "user",
+      content: [
+        { type: "input_text", text: `${prompt}\n\nCRITICAL REQUIREMENT: You MUST use the image_generation tool to output the requested image. Do not return text.` },
+        { type: "input_image", image_url: image }
+      ]
+    }
+  ],
+  stream,
+  tools: [
+    {
+      type: "image_generation",
+      action: "edit",
+      model: IMAGE_MODEL,
+      quality: IMAGE_QUALITY,
+      size: "auto",
+      ...(stream ? { partial_images: 2 } : {})
+    }
+  ],
+  tool_choice: { type: "image_generation" }
+});
+
+const getFirstGeneratedImage = (response) => (
+  (response.output || [])
+    .filter((output) => output.type === "image_generation_call")
+    .map((output) => output.result)
+    .find(Boolean)
+);
+
+const writeStreamEvent = (res, event) => {
+  res.write(`${JSON.stringify(event)}\n`);
+};
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed.' });
@@ -34,9 +70,10 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Missing OPENAI_API_KEY server environment variable.' });
   }
 
-  const { prompt, image, requestId } = req.body || {};
+  const { prompt, image, requestId, stream: shouldStream = false } = req.body || {};
   const generationRequestId = requestId || `gen_${nowMs()}_${Math.random().toString(36).slice(2, 8)}`;
   const startedAt = nowMs();
+  let streamStarted = false;
 
   if (!prompt || !image) {
     return res.status(400).json({ error: 'Missing prompt or image.' });
@@ -49,41 +86,92 @@ export default async function handler(req, res) {
       textModel: TEXT_MODEL,
       imageModel: IMAGE_MODEL,
       imageQuality: IMAGE_QUALITY,
+      stream: Boolean(shouldStream),
       promptChars: prompt.length,
       inputImageApproxBytes: estimateBase64Bytes(image)
     });
 
     const openai = new OpenAI({ apiKey, maxRetries: 0 });
-    const response = await openai.responses.create({
-      model: TEXT_MODEL,
-      input: [
-        {
-          role: "user",
-          content: [
-            { type: "input_text", text: `${prompt}\n\nCRITICAL REQUIREMENT: You MUST use the image_generation tool to output the requested image. Do not return text.` },
-            { type: "input_image", image_url: image }
-          ]
+
+    if (shouldStream) {
+      res.status(200);
+      res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders?.();
+      streamStarted = true;
+
+      writeStreamEvent(res, {
+        type: 'started',
+        requestId: generationRequestId,
+        startedAt: timestamp()
+      });
+
+      let completedResponse = null;
+      const openaiStream = await openai.responses.create(createImageGenerationParams(prompt, image, true));
+
+      for await (const event of openaiStream) {
+        if (event.type === "response.image_generation_call.partial_image") {
+          writeStreamEvent(res, {
+            type: 'partial',
+            requestId: generationRequestId,
+            partialImageIndex: event.partial_image_index,
+            image: event.partial_image_b64,
+            receivedAt: timestamp()
+          });
+        } else if (event.type === "response.completed") {
+          completedResponse = event.response;
         }
-      ],
-      tools: [
-        {
-          type: "image_generation",
-          action: "edit",
-          model: IMAGE_MODEL,
-          quality: IMAGE_QUALITY,
-          size: "auto"
-        }
-      ],
-      tool_choice: { type: "image_generation" }
-    });
+      }
+
+      const openaiDurationMs = nowMs() - startedAt;
+      const imageData = getFirstGeneratedImage(completedResponse || {});
+
+      if (!imageData) {
+        console.error('[generate] no streamed image data', {
+          requestId: generationRequestId,
+          responseId: completedResponse?.id,
+          timestamp: timestamp(),
+          durationMs: openaiDurationMs,
+          outputTypes: (completedResponse?.output || []).map((output) => output.type)
+        });
+        writeStreamEvent(res, {
+          type: 'error',
+          error: 'OpenAI returned no generated image.',
+          requestId: generationRequestId,
+          responseId: completedResponse?.id,
+          durationMs: openaiDurationMs
+        });
+        return res.end();
+      }
+
+      console.log('[generate] stream complete', {
+        requestId: generationRequestId,
+        responseId: completedResponse.id,
+        timestamp: timestamp(),
+        durationMs: openaiDurationMs,
+        outputTypes: (completedResponse.output || []).map((output) => output.type),
+        outputImageApproxBytes: estimateBase64Bytes(imageData)
+      });
+
+      writeStreamEvent(res, {
+        type: 'completed',
+        image: imageData,
+        requestId: generationRequestId,
+        responseId: completedResponse.id,
+        completedAt: timestamp(),
+        durationMs: openaiDurationMs
+      });
+      return res.end();
+    }
+
+    const response = await openai.responses.create(createImageGenerationParams(prompt, image));
 
     const openaiDurationMs = nowMs() - startedAt;
 
-    const imageData = (response.output || [])
-      .filter((output) => output.type === "image_generation_call")
-      .map((output) => output.result);
+    const imageData = getFirstGeneratedImage(response);
 
-    if (!imageData?.[0]) {
+    if (!imageData) {
       console.error('[generate] no image data', {
         requestId: generationRequestId,
         responseId: response.id,
@@ -100,11 +188,11 @@ export default async function handler(req, res) {
       timestamp: timestamp(),
       durationMs: openaiDurationMs,
       outputTypes: (response.output || []).map((output) => output.type),
-      outputImageApproxBytes: estimateBase64Bytes(imageData[0])
+      outputImageApproxBytes: estimateBase64Bytes(imageData)
     });
 
     return res.status(200).json({
-      image: imageData[0],
+      image: imageData,
       requestId: generationRequestId,
       responseId: response.id,
       completedAt: timestamp(),
@@ -124,6 +212,16 @@ export default async function handler(req, res) {
       code: err.error?.code,
       durationMs
     });
+
+    if (streamStarted) {
+      writeStreamEvent(res, {
+        type: 'error',
+        error: message,
+        requestId: generationRequestId,
+        durationMs
+      });
+      return res.end();
+    }
 
     return res.status(status >= 400 && status < 600 ? status : 500).json({ error: message, requestId: generationRequestId, durationMs });
   }

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import './App.css';
@@ -108,6 +108,48 @@ const createGenerationRequestId = (generationId, variationNumber, attempt) => (
   `${generationId}-v${variationNumber}-a${attempt}`
 );
 
+const createEmptyResultSlots = (count) => Array.from({ length: count }, (_, idx) => ({
+  id: idx,
+  src: "",
+  status: "pending",
+  partialImageIndex: null,
+  requestId: null,
+  error: ""
+}));
+
+const dataUrlFromBase64 = (imageBase64) => `data:image/png;base64,${imageBase64}`;
+
+const readJsonLineStream = async (response, onEvent) => {
+  if (!response.body) {
+    throw new Error("Streaming is not supported by this browser.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      onEvent(JSON.parse(trimmed));
+    }
+
+    if (done) break;
+  }
+
+  const trimmed = buffer.trim();
+  if (trimmed) {
+    onEvent(JSON.parse(trimmed));
+  }
+};
+
 const logTime = () => ({
   iso: new Date().toISOString(),
   local: new Date().toLocaleString()
@@ -172,6 +214,7 @@ function App() {
   const [isRotatingUpload, setIsRotatingUpload] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [resultImages, setResultImages] = useState([]);
+  const [resultSlots, setResultSlots] = useState([]);
   const numVariations = 3;
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [showOriginalCompare, setShowOriginalCompare] = useState(false);
@@ -179,6 +222,25 @@ function App() {
   const [stylePreviewIndex, setStylePreviewIndex] = useState(null);
   const [showUploadPreview, setShowUploadPreview] = useState(false);
   const fileInputRef = useRef(null);
+
+  const displayResultSlots = useMemo(() => (
+    resultSlots.length > 0
+      ? resultSlots
+      : resultImages.map((src, idx) => ({
+      id: idx,
+      src,
+      status: "completed",
+      partialImageIndex: null,
+      requestId: null,
+      error: ""
+    }))
+  ), [resultImages, resultSlots]);
+  const lightboxSlot = lightboxIndex !== null ? displayResultSlots[lightboxIndex] : null;
+  const lightboxResultSrc = lightboxSlot?.src || "";
+  const hasMultiplePreviewableResults = useMemo(
+    () => displayResultSlots.filter((slot) => slot.src).length > 1,
+    [displayResultSlots]
+  );
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -319,17 +381,31 @@ function App() {
     setLightboxIndex(null);
   };
 
-  const nextLightbox = (e) => {
+  const nextLightbox = useCallback((e) => {
     if (e) e.stopPropagation();
     setShowOriginalCompare(false);
-    setLightboxIndex(prev => (prev + 1) % resultImages.length);
-  };
+    const navigableSlots = displayResultSlots.filter((slot) => slot.src);
+    if (navigableSlots.length < 2) return;
+    setLightboxIndex(prev => {
+      const currentPosition = navigableSlots.findIndex((slot) => slot.id === displayResultSlots[prev]?.id);
+      const nextPosition = currentPosition === -1 ? 0 : (currentPosition + 1) % navigableSlots.length;
+      return displayResultSlots.findIndex((slot) => slot.id === navigableSlots[nextPosition].id);
+    });
+  }, [displayResultSlots]);
 
-  const prevLightbox = (e) => {
+  const prevLightbox = useCallback((e) => {
     if (e) e.stopPropagation();
     setShowOriginalCompare(false);
-    setLightboxIndex(prev => (prev - 1 + resultImages.length) % resultImages.length);
-  };
+    const navigableSlots = displayResultSlots.filter((slot) => slot.src);
+    if (navigableSlots.length < 2) return;
+    setLightboxIndex(prev => {
+      const currentPosition = navigableSlots.findIndex((slot) => slot.id === displayResultSlots[prev]?.id);
+      const nextPosition = currentPosition === -1
+        ? 0
+        : (currentPosition - 1 + navigableSlots.length) % navigableSlots.length;
+      return displayResultSlots.findIndex((slot) => slot.id === navigableSlots[nextPosition].id);
+    });
+  }, [displayResultSlots]);
 
   useEffect(() => {
     if (lightboxIndex === null) return;
@@ -349,7 +425,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [lightboxIndex, resultImages.length, imageFile]);
+  }, [lightboxIndex, imageFile, nextLightbox, prevLightbox]);
 
   const handleDownload = (dataUrl, filename) => {
     try {
@@ -382,12 +458,19 @@ function App() {
     }
   };
 
+  const updateResultSlot = (idx, updates) => {
+    setResultSlots((currentSlots) => currentSlots.map((slot, slotIdx) => (
+      slotIdx === idx ? { ...slot, ...updates } : slot
+    )));
+  };
+
   const handleGenerate = async () => {
     if (!imagePreview || selectedStyleIndex === null) return;
 
     setIsGenerating(true);
     setErrorMsg("");
     setResultImages([]);
+    setResultSlots(createEmptyResultSlots(numVariations));
 
     try {
       const style = STYLES[selectedStyleIndex];
@@ -417,6 +500,11 @@ function App() {
           const attemptStartedAt = performance.now();
 
           try {
+            updateResultSlot(idx, {
+              status: attempt === 1 ? "pending" : "retrying",
+              requestId,
+              error: ""
+            });
             console.log(`Variation ${idx + 1}: starting attempt ${attempt}`, {
               requestId,
               ...logTime(),
@@ -430,14 +518,13 @@ function App() {
               body: JSON.stringify({
                 prompt: finalPrompt,
                 image: imagePreview,
-                requestId
+                requestId,
+                stream: true
               })
             });
 
-            const responseBody = await response.json().catch(() => null);
-            const attemptDurationSec = Math.round((performance.now() - attemptStartedAt) / 1000);
-
             if (!response.ok) {
+              const responseBody = await response.json().catch(() => null);
               const error = new Error(responseBody?.error || `Generation request failed with status ${response.status}`);
               error.status = response.status;
               error.retryable = shouldRetryGeneration(response.status);
@@ -446,17 +533,51 @@ function App() {
               throw error;
             }
 
-            if (responseBody?.image) {
+            let completedEvent = null;
+
+            await readJsonLineStream(response, (event) => {
+              if (event.type === "started") {
+                updateResultSlot(idx, {
+                  status: "generating",
+                  requestId: event.requestId || requestId
+                });
+              } else if (event.type === "partial") {
+                updateResultSlot(idx, {
+                  status: "partial",
+                  src: dataUrlFromBase64(event.image),
+                  partialImageIndex: event.partialImageIndex,
+                  requestId: event.requestId || requestId
+                });
+              } else if (event.type === "completed") {
+                completedEvent = event;
+                updateResultSlot(idx, {
+                  status: "completed",
+                  src: dataUrlFromBase64(event.image),
+                  partialImageIndex: null,
+                  requestId: event.requestId || requestId
+                });
+              } else if (event.type === "error") {
+                const error = new Error(event.error || "Generation stream failed.");
+                error.status = event.status;
+                error.retryable = shouldRetryGeneration(event.status || 500);
+                error.requestId = event.requestId || requestId;
+                error.durationMs = event.durationMs;
+                throw error;
+              }
+            });
+
+            if (completedEvent?.image) {
+              const attemptDurationSec = Math.round((performance.now() - attemptStartedAt) / 1000);
               console.log(`Variation ${idx + 1}: completed`, {
-                requestId: responseBody.requestId || requestId,
-                openaiResponseId: responseBody.responseId,
+                requestId: completedEvent.requestId || requestId,
+                openaiResponseId: completedEvent.responseId,
                 browserReceivedAt: logTime(),
-                serverCompletedAt: responseBody.completedAt,
+                serverCompletedAt: completedEvent.completedAt,
                 attemptDurationSec,
-                serverDurationSec: responseBody.durationMs ? Math.round(responseBody.durationMs / 1000) : null,
+                serverDurationSec: completedEvent.durationMs ? Math.round(completedEvent.durationMs / 1000) : null,
                 elapsedSinceGroupStartSec: Math.round((performance.now() - startedAt) / 1000)
               });
-              return `data:image/png;base64,${responseBody.image}`;
+              return dataUrlFromBase64(completedEvent.image);
             }
 
             throw new Error("No image data returned from API.");
@@ -473,6 +594,10 @@ function App() {
             });
 
             if (attempt < MAX_GENERATION_ATTEMPTS && err.retryable !== false) {
+              updateResultSlot(idx, {
+                status: "retrying",
+                error: "Retrying..."
+              });
               await new Promise(resolve => setTimeout(resolve, 1000));
             } else if (attempt < MAX_GENERATION_ATTEMPTS) {
               break;
@@ -480,6 +605,10 @@ function App() {
           }
         }
 
+        updateResultSlot(idx, {
+          status: "failed",
+          error: lastError?.message || "Generation failed."
+        });
         throw new Error(`Variation ${idx + 1} failed after ${MAX_GENERATION_ATTEMPTS} attempts. Last error: ${lastError?.message || lastError}`);
       };
 
@@ -508,6 +637,7 @@ function App() {
       console.error("Error during generation:", err);
     } finally {
       setIsGenerating(false);
+      setResultSlots([]);
       console.log("==================== GENERATION FINISHED ===================");
     }
   };
@@ -708,27 +838,49 @@ function App() {
 
           <div className="right-column">
             {/* Results Area */}
-            {resultImages.length > 0 ? (
+            {displayResultSlots.length > 0 ? (
               <div className="section results-area" id="results">
-                <h2>Colorized Result{resultImages.length > 1 ? 's' : ''}</h2>
-                <p className="results-note">Results may contain differences from original, click compare to check accuracy</p>
+                <h2>Colorized Result{displayResultSlots.length > 1 ? 's' : ''}</h2>
+                <p className="results-note">
+                  {isGenerating ? 'Partial previews will sharpen as each result finishes' : 'Results may contain differences from original, click compare to check accuracy'}
+                </p>
                 <div className="results-grid">
-                  {resultImages.map((img, idx) => (
-                    <div key={idx} className="result-card">
+                  {displayResultSlots.map((slot, idx) => (
+                    <div key={slot.id} className={`result-card result-card-${slot.status}`}>
                       <div className="result-image-container">
-                        <img
-                          src={img}
-                          alt={`Colorized Output ${idx + 1}`}
-                          className="result-img"
-                          onClick={() => openLightbox(idx)}
-                        />
+                        {slot.src ? (
+                          <img
+                            src={slot.src}
+                            alt={slot.status === "completed" ? `Colorized Output ${idx + 1}` : `Partial preview ${idx + 1}`}
+                            className={`result-img ${slot.status !== "completed" ? "is-partial" : ""}`}
+                            onClick={() => {
+                              if (slot.src) {
+                                openLightbox(idx);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <div className="result-loading-placeholder">
+                            <div className="spinner"></div>
+                          </div>
+                        )}
+                        {slot.status !== "completed" && slot.status !== "pending" && slot.status !== "generating" && (
+                          <div className="result-status-badge">
+                            {slot.status === "failed"
+                              ? "Failed"
+                              : slot.status === "partial"
+                                ? `Preview ${(slot.partialImageIndex ?? 0) + 1}`
+                                : "Retrying"}
+                          </div>
+                        )}
                       </div>
                       <button
                         type="button"
                         className="compare-btn"
+                        disabled={slot.status !== "completed" || resultSlots.length > 0}
                         onClick={() => openLightbox(idx)}
                       >
-                        Compare
+                        {slot.status === "completed" && resultSlots.length === 0 ? "Compare" : "Waiting"}
                       </button>
                     </div>
                   ))}
@@ -841,10 +993,10 @@ function App() {
         )}
 
         {/* Lightbox Modal */}
-        {lightboxIndex !== null && (
+        {lightboxIndex !== null && (showOriginalCompare ? imagePreview : lightboxResultSrc) && (
           <div className="lightbox-overlay" onClick={closeLightbox}>
 
-            {resultImages.length > 1 && (
+            {hasMultiplePreviewableResults && (
               <button className="lightbox-nav prev" onClick={prevLightbox} aria-label="Previous result"></button>
             )}
 
@@ -852,13 +1004,13 @@ function App() {
               <button className="lightbox-close" onClick={closeLightbox}>✕</button>
 
               <div className="compare-label">
-                {showOriginalCompare ? 'Original' : `Result ${lightboxIndex + 1}`}
+                {showOriginalCompare ? 'Original' : `${lightboxSlot?.status === "completed" ? "Result" : "Preview"} ${lightboxIndex + 1}`}
               </div>
 
               <div className="compare-stage">
                 <img
-                  src={showOriginalCompare ? imagePreview : resultImages[lightboxIndex]}
-                  alt={showOriginalCompare ? "Original uploaded floorplan" : `Colorized Output ${lightboxIndex + 1}`}
+                  src={showOriginalCompare ? imagePreview : lightboxResultSrc}
+                  alt={showOriginalCompare ? "Original uploaded floorplan" : `${lightboxSlot?.status === "completed" ? "Colorized output" : "Partial preview"} ${lightboxIndex + 1}`}
                   className="lightbox-img"
                 />
               </div>
@@ -885,7 +1037,9 @@ function App() {
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    handleDownload(resultImages[lightboxIndex], `colorized_floorplan_v${lightboxIndex + 1}.png`);
+                    if (lightboxResultSrc) {
+                      handleDownload(lightboxResultSrc, `colorized_floorplan_v${lightboxIndex + 1}.png`);
+                    }
                   }}
                   className="download-btn"
                 >
@@ -894,7 +1048,7 @@ function App() {
               </div>
             </div>
 
-            {resultImages.length > 1 && (
+            {hasMultiplePreviewableResults && (
               <button className="lightbox-nav next" onClick={nextLightbox} aria-label="Next result"></button>
             )}
 
