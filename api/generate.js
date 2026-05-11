@@ -12,6 +12,7 @@ export const config = {
 
 const IMAGE_MODEL = "gpt-image-2";
 const IMAGE_QUALITY = "auto";
+const IMAGE_BACKGROUND = "opaque";
 const TEXT_MODEL = "gpt-4o";
 
 const nowMs = () => Date.now();
@@ -41,6 +42,7 @@ const createImageGenerationParams = (prompt, image, stream = false) => ({
       action: "edit",
       model: IMAGE_MODEL,
       quality: IMAGE_QUALITY,
+      background: IMAGE_BACKGROUND,
       size: "auto",
       ...(stream ? { partial_images: 2 } : {})
     }
@@ -86,6 +88,7 @@ export default async function handler(req, res) {
       textModel: TEXT_MODEL,
       imageModel: IMAGE_MODEL,
       imageQuality: IMAGE_QUALITY,
+      imageBackground: IMAGE_BACKGROUND,
       stream: Boolean(shouldStream),
       promptChars: prompt.length,
       inputImageApproxBytes: estimateBase64Bytes(image)
