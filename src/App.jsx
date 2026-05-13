@@ -57,7 +57,6 @@ Take the provided black-and-white floorplan or 3D render of an Eye Doctors offic
 * **Do NOT add light fixtures, or any element not in the original**
 * **Do NOT add any new objects, including plants, furniture, decor, people, equipment, signage, labels, icons, or logos**
 * **Do NOT generate fake text, pseudo-text, blurry labels, shadow text, or duplicate labels**
-* **Do NOT remove logo box and/or frame if it is present in the original image**
 * **Remove all architectural annotations and plan labels that are overlaid on floors, open areas, or drawings (e.g., material notes, room labels, dimension text, and construction notes such as "Vinyl Plank").
 * **Wall displays are almost always *Frame Dispalys* do not turn them into plants. This is an eye doctors office.
 
@@ -82,6 +81,14 @@ If any new visual separation or edge appears that is not in the original, the re
 - Do not modify, restyle, or replace any preserved text
 - All linework must remain exactly as-is
 
+### **LOGO MARK PRESERVATION (MANDATORY)**
+
+- If the original image includes a logo mark, logo box, title block, or framed label, it must remain visible in the output
+- Do not crop out, erase, cover, blur, repaint, simplify, move, shrink, enlarge, or replace the logo mark
+- Preserve the logo mark in the exact same location, shape, border/frame, contrast, and approximate text appearance
+- This includes small rectangles in a corner such as "Eye Designs 3D-1" or similar project/logo labels
+- The logo mark is not an architectural annotation; do not remove it when cleaning plan labels
+
 ---
 
 ### **STYLE (SWAP THIS SECTION ONLY)**
@@ -94,6 +101,7 @@ If any new visual separation or edge appears that is not in the original, the re
 
 * The result must look like a **single transparent color layer applied over the original**
 * **Every region = one continuous fill (no internal variation that creates edges)**
+* If the source contains a logo mark, logo box, title block, or framed label, the output is invalid unless that mark is still visible in the same place
 * Removing color should return the exact original with no differences
 * Any edge, border, or contrast line not present in the original must be removed.`;
 
@@ -215,13 +223,16 @@ function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [resultImages, setResultImages] = useState([]);
   const [resultSlots, setResultSlots] = useState([]);
-  const numVariations = 3;
+  const numVariations = 4;
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [showOriginalCompare, setShowOriginalCompare] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [stylePreviewIndex, setStylePreviewIndex] = useState(null);
   const [showUploadPreview, setShowUploadPreview] = useState(false);
   const fileInputRef = useRef(null);
+  const resultSlotAssignmentsRef = useRef(new Map());
+  const nextResultSlotRef = useRef(0);
+  const finalImagesBySlotRef = useRef([]);
 
   const displayResultSlots = useMemo(() => (
     resultSlots.length > 0
@@ -464,12 +475,30 @@ function App() {
     )));
   };
 
+  const getAssignedResultSlot = (variationIdx) => resultSlotAssignmentsRef.current.get(variationIdx);
+
+  const assignNextResultSlot = (variationIdx) => {
+    const assignedSlot = getAssignedResultSlot(variationIdx);
+
+    if (assignedSlot !== undefined) {
+      return assignedSlot;
+    }
+
+    const nextSlot = Math.min(nextResultSlotRef.current, numVariations - 1);
+    resultSlotAssignmentsRef.current.set(variationIdx, nextSlot);
+    nextResultSlotRef.current += 1;
+    return nextSlot;
+  };
+
   const handleGenerate = async () => {
     if (!imagePreview || selectedStyleIndex === null) return;
 
     setIsGenerating(true);
     setErrorMsg("");
     setResultImages([]);
+    resultSlotAssignmentsRef.current = new Map();
+    nextResultSlotRef.current = 0;
+    finalImagesBySlotRef.current = [];
     setResultSlots(createEmptyResultSlots(numVariations));
 
     try {
@@ -500,11 +529,16 @@ function App() {
           const attemptStartedAt = performance.now();
 
           try {
-            updateResultSlot(idx, {
-              status: attempt === 1 ? "pending" : "retrying",
-              requestId,
-              error: ""
-            });
+            const assignedSlot = getAssignedResultSlot(idx);
+
+            if (assignedSlot !== undefined) {
+              updateResultSlot(assignedSlot, {
+                status: attempt === 1 ? "pending" : "retrying",
+                requestId,
+                error: ""
+              });
+            }
+
             console.log(`Variation ${idx + 1}: starting attempt ${attempt}`, {
               requestId,
               ...logTime(),
@@ -537,12 +571,18 @@ function App() {
 
             await readJsonLineStream(response, (event) => {
               if (event.type === "started") {
-                updateResultSlot(idx, {
-                  status: "generating",
-                  requestId: event.requestId || requestId
-                });
+                const slotIdx = getAssignedResultSlot(idx);
+
+                if (slotIdx !== undefined) {
+                  updateResultSlot(slotIdx, {
+                    status: "generating",
+                    requestId: event.requestId || requestId
+                  });
+                }
               } else if (event.type === "partial") {
-                updateResultSlot(idx, {
+                const slotIdx = assignNextResultSlot(idx);
+
+                updateResultSlot(slotIdx, {
                   status: "partial",
                   src: dataUrlFromBase64(event.image),
                   partialImageIndex: event.partialImageIndex,
@@ -550,9 +590,13 @@ function App() {
                 });
               } else if (event.type === "completed") {
                 completedEvent = event;
-                updateResultSlot(idx, {
+                const slotIdx = assignNextResultSlot(idx);
+                const completedImage = dataUrlFromBase64(event.image);
+                finalImagesBySlotRef.current[slotIdx] = completedImage;
+
+                updateResultSlot(slotIdx, {
                   status: "completed",
-                  src: dataUrlFromBase64(event.image),
+                  src: completedImage,
                   partialImageIndex: null,
                   requestId: event.requestId || requestId
                 });
@@ -594,10 +638,15 @@ function App() {
             });
 
             if (attempt < MAX_GENERATION_ATTEMPTS && err.retryable !== false) {
-              updateResultSlot(idx, {
-                status: "retrying",
-                error: "Retrying..."
-              });
+              const slotIdx = getAssignedResultSlot(idx);
+
+              if (slotIdx !== undefined) {
+                updateResultSlot(slotIdx, {
+                  status: "retrying",
+                  error: "Retrying..."
+                });
+              }
+
               await new Promise(resolve => setTimeout(resolve, 1000));
             } else if (attempt < MAX_GENERATION_ATTEMPTS) {
               break;
@@ -605,7 +654,7 @@ function App() {
           }
         }
 
-        updateResultSlot(idx, {
+        updateResultSlot(assignNextResultSlot(idx), {
           status: "failed",
           error: lastError?.message || "Generation failed."
         });
@@ -624,13 +673,14 @@ function App() {
 
       if (validResults.length > 0) {
         console.log(`Successfully retrieved ${validResults.length} image(s) in ${Math.round((performance.now() - startedAt) / 1000)}s.`, logTime());
-        setResultImages(validResults);
+        setResultImages(finalImagesBySlotRef.current.filter(Boolean));
 
         if (failedResults.length > 0) {
           setErrorMsg(`${validResults.length} of ${numVariations} images completed. ${failedResults.length} failed after retry.`);
         }
       } else {
-        throw new Error("No image was generated by the API.");
+        const firstFailure = failedResults[0]?.reason?.message;
+        throw new Error(firstFailure ? `All ${numVariations} image generations failed. ${firstFailure}` : "No image was generated by the API.");
       }
     } catch (err) {
       setErrorMsg(err.message || "An error occurred");
