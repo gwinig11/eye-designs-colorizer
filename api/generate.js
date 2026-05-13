@@ -68,7 +68,7 @@ export default async function handler(req, res) {
 
   const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
 
-  if (!apiKey) {
+  if (!apiKey || apiKey === 'undefined' || apiKey === 'null') {
     return res.status(500).json({ error: 'Missing OPENAI_API_KEY server environment variable.' });
   }
 
@@ -220,6 +220,7 @@ export default async function handler(req, res) {
       writeStreamEvent(res, {
         type: 'error',
         error: message,
+        status,
         requestId: generationRequestId,
         durationMs
       });
