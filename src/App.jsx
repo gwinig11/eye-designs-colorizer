@@ -213,6 +213,56 @@ const imageFileToDataUrl = async (file) => {
   });
 };
 
+const createAirtableUploadQueue = (originalImage, generatedImages) => (
+  generatedImages.flatMap((generatedImage, idx) => [
+    {
+      source: originalImage,
+      filename: `original-upload-${idx + 1}.png`
+    },
+    {
+      source: generatedImage,
+      filename: `colorized-result-${idx + 1}.png`
+    }
+  ])
+);
+
+const postAirtableLogAction = async (payload) => {
+  const response = await fetch('/api/log-airtable', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(body?.error || `Airtable logging failed with status ${response.status}`);
+  }
+
+  return body;
+};
+
+const logImagesToAirtable = async ({ originalImage, generatedImages, style, specialInstructions }) => {
+  const { recordId } = await postAirtableLogAction({
+    action: 'create',
+    style,
+    specialInstructions
+  });
+  const uploadQueue = createAirtableUploadQueue(originalImage, generatedImages);
+
+  for (const attachment of uploadQueue) {
+    await postAirtableLogAction({
+      action: 'upload',
+      recordId,
+      ...attachment
+    });
+  }
+
+  return recordId;
+};
+
 function App() {
   const [selectedStyleIndex, setSelectedStyleIndex] = useState(0);
   const [specialInstructions, setSpecialInstructions] = useState("");
@@ -673,10 +723,28 @@ function App() {
 
       if (validResults.length > 0) {
         console.log(`Successfully retrieved ${validResults.length} image(s) in ${Math.round((performance.now() - startedAt) / 1000)}s.`, logTime());
-        setResultImages(finalImagesBySlotRef.current.filter(Boolean));
+        const completedImages = finalImagesBySlotRef.current.filter(Boolean);
+        setResultImages(completedImages);
 
         if (failedResults.length > 0) {
           setErrorMsg(`${validResults.length} of ${numVariations} images completed. ${failedResults.length} failed after retry.`);
+        } else if (completedImages.length === numVariations) {
+          logImagesToAirtable({
+            originalImage: imagePreview,
+            generatedImages: completedImages,
+            style: style.name,
+            specialInstructions: specialInstructions.trim()
+          })
+            .then((airtableRecordId) => {
+              console.log("Airtable image request logged", {
+                recordId: airtableRecordId,
+                galleryItems: completedImages.length * 2,
+                loggedAt: logTime()
+              });
+            })
+            .catch((airtableErr) => {
+              console.error("Failed to log images to Airtable:", airtableErr);
+            });
         }
       } else {
         const firstFailure = failedResults[0]?.reason?.message;
