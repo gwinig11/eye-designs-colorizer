@@ -252,12 +252,23 @@ const logImagesToAirtable = async ({ originalImage, generatedImages, style, spec
   });
   const uploadQueue = createAirtableUploadQueue(originalImage, generatedImages);
 
-  for (const attachment of uploadQueue) {
+  try {
+    for (const attachment of uploadQueue) {
+      await postAirtableLogAction({
+        action: 'upload',
+        recordId,
+        ...attachment
+      });
+    }
+  } catch (err) {
     await postAirtableLogAction({
-      action: 'upload',
-      recordId,
-      ...attachment
+      action: 'delete',
+      recordId
+    }).catch((deleteErr) => {
+      console.error("Failed to delete incomplete Airtable record:", deleteErr);
     });
+
+    throw err;
   }
 
   return recordId;

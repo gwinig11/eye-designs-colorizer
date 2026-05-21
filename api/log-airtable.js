@@ -99,6 +99,22 @@ const createImageRequestRecord = async (token, fields = {}) => {
   return record;
 };
 
+const deleteImageRequestRecord = async (token, recordId) => {
+  const response = await fetch(
+    `${AIRTABLE_API_BASE}/${encodeURIComponent(AIRTABLE_TABLE_NAME)}/${encodeURIComponent(recordId)}`,
+    {
+      method: 'DELETE',
+      headers: airtableHeaders(token)
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(await getAirtableErrorMessage(response));
+  }
+
+  return response.json();
+};
+
 const uploadGalleryAttachment = async ({ token, recordId, source, filename }) => {
   const { contentType, base64 } = await sourceToAttachmentFile(source);
   const response = await fetch(
@@ -157,6 +173,18 @@ export default async function handler(req, res) {
         source,
         filename
       });
+
+      return res.status(200).json({ ok: true, recordId });
+    }
+
+    if (action === 'delete') {
+      const { recordId } = req.body || {};
+
+      if (!recordId) {
+        return res.status(400).json({ error: 'Missing Airtable record id.' });
+      }
+
+      await deleteImageRequestRecord(token, recordId);
 
       return res.status(200).json({ ok: true, recordId });
     }
