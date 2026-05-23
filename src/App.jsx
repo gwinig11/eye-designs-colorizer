@@ -244,11 +244,20 @@ const postAirtableLogAction = async (payload) => {
   return body;
 };
 
-const logImagesToAirtable = async ({ originalImage, generatedImages, style, specialInstructions }) => {
+const logImagesToAirtable = async ({
+  originalImage,
+  generatedImages,
+  style,
+  specialInstructions,
+  requestStartTime,
+  requestCompletionTime
+}) => {
   const { recordId } = await postAirtableLogAction({
     action: 'create',
     style,
-    specialInstructions
+    specialInstructions,
+    requestStartTime,
+    requestCompletionTime
   });
   const uploadQueue = createAirtableUploadQueue(originalImage, generatedImages);
 
@@ -554,6 +563,8 @@ function App() {
   const handleGenerate = async () => {
     if (!imagePreview || selectedStyleIndex === null) return;
 
+    const requestStartTime = new Date().toISOString();
+
     setIsGenerating(true);
     setErrorMsg("");
     setResultImages([]);
@@ -725,6 +736,7 @@ function App() {
       const settledResults = await Promise.allSettled(
         Array.from({ length: numVariations }, (_, idx) => generateVariation(idx))
       );
+      const requestCompletionTime = new Date().toISOString();
 
       const validResults = settledResults
         .filter((result) => result.status === "fulfilled")
@@ -744,7 +756,9 @@ function App() {
             originalImage: imagePreview,
             generatedImages: completedImages,
             style: style.name,
-            specialInstructions: specialInstructions.trim()
+            specialInstructions: specialInstructions.trim(),
+            requestStartTime,
+            requestCompletionTime
           })
             .then((airtableRecordId) => {
               console.log("Airtable image request logged", {

@@ -152,10 +152,17 @@ export default async function handler(req, res) {
 
   try {
     if (action === 'create') {
-      const { style = '', specialInstructions = '' } = req.body || {};
+      const {
+        style = '',
+        specialInstructions = '',
+        requestStartTime = '',
+        requestCompletionTime = ''
+      } = req.body || {};
       const record = await createImageRequestRecord(token, {
         Style: style,
-        'Special Instructions': specialInstructions
+        'Special Instructions': specialInstructions,
+        'Request Start Time': requestStartTime,
+        'Request Completion Time': requestCompletionTime
       });
       return res.status(200).json({ recordId: record.id });
     }
