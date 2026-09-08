@@ -440,7 +440,7 @@ body {
 }
 
 .download-all-btn {
-  align-self: flex-end;
+  align-self: center;
   margin: -8px 0;
   padding: 2px 0;
   border: none;
