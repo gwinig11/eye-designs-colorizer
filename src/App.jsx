@@ -36,6 +36,7 @@ const STYLES = [
     previewImage: "/soft-preview.png"
   },
   {
+    id: "aspen-quick-ship",
     name: "Aspen Quick Ship",
     description: "White Wood + Driftwood Walls + Black",
     allowFeatureWallTexture: true,
@@ -685,6 +686,7 @@ function App() {
               body: JSON.stringify({
                 prompt: finalPrompt,
                 image: imagePreview,
+                styleId: style.id,
                 requestId,
                 stream: true
               })
@@ -870,6 +872,9 @@ function App() {
                     <div className="style-info">
                       <h3>{style.name}</h3>
                       <p>{style.description}</p>
+                      {style.id === 'aspen-quick-ship' && (
+                        <p>Includes 2 style reference images</p>
+                      )}
                       {style.previewImage && (
                         <button
                           type="button"

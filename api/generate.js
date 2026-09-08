@@ -1,4 +1,6 @@
 import OpenAI from 'openai';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 
 export const config = {
   api: {
@@ -15,6 +17,15 @@ const IMAGE_QUALITY = "auto";
 const IMAGE_BACKGROUND = "opaque";
 const TEXT_MODEL = "gpt-4o";
 
+const loadStyleReferences = async (styleId) => {
+  if (styleId !== 'aspen-quick-ship') return [];
+
+  return Promise.all(['showroom.png', 'display-detail.png'].map(async (filename) => {
+    const image = await readFile(path.join(process.cwd(), 'public/style-references/aspen', filename));
+    return `data:image/png;base64,${image.toString('base64')}`;
+  }));
+};
+
 const nowMs = () => Date.now();
 
 const timestamp = () => new Date().toISOString();
@@ -24,14 +35,22 @@ const estimateBase64Bytes = (dataUrl = "") => {
   return Math.round((base64.length * 3) / 4);
 };
 
-const createImageGenerationParams = (prompt, image, stream = false) => ({
+const createImageGenerationParams = (prompt, image, stream = false, referenceImages = []) => ({
   model: TEXT_MODEL,
   input: [
     {
       role: "user",
       content: [
         { type: "input_text", text: `${prompt}\n\nCRITICAL REQUIREMENT: You MUST use the image_generation tool to output the requested image. Do not return text.` },
-        { type: "input_image", image_url: image }
+        ...(referenceImages.length ? [{
+          type: "input_text",
+          text: "IMAGE ROLES: Image 1 is the source floorplan/render and the only image to edit. Preserve its geometry, viewpoint, composition, and protected logo/title block under the rules above. Images 2 and 3 are Aspen style references only: use their white wood-grain cabinetry, black hardware, weathered wood finishes, and restrained upholstery colors as visual material guidance. Follow the written Aspen style and special instructions wherever the references differ, including the gray wood main walls, neutral floor, limited accent colors, and light exposed wall tops. Do not copy the references' room layouts, camera views, furniture, people, signage, decor, rugs, wallpaper patterns, or additional objects. Return only the colorized Image 1.\n\nIMAGE 1 — SOURCE TO COLORIZE:"
+        }] : []),
+        { type: "input_image", image_url: image },
+        ...referenceImages.flatMap((referenceImage, index) => [
+          { type: "input_text", text: `IMAGE ${index + 2} — ASPEN STYLE REFERENCE ONLY (not the image to edit):` },
+          { type: "input_image", image_url: referenceImage }
+        ])
       ]
     }
   ],
@@ -72,7 +91,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Missing OPENAI_API_KEY server environment variable.' });
   }
 
-  const { prompt, image, requestId, stream: shouldStream = false } = req.body || {};
+  const { prompt, image, styleId, requestId, stream: shouldStream = false } = req.body || {};
   const generationRequestId = requestId || `gen_${nowMs()}_${Math.random().toString(36).slice(2, 8)}`;
   const startedAt = nowMs();
   let streamStarted = false;
@@ -82,6 +101,8 @@ export default async function handler(req, res) {
   }
 
   try {
+    const referenceImages = await loadStyleReferences(styleId);
+
     console.log('[generate] start', {
       requestId: generationRequestId,
       timestamp: timestamp(),
@@ -89,6 +110,8 @@ export default async function handler(req, res) {
       imageModel: IMAGE_MODEL,
       imageQuality: IMAGE_QUALITY,
       imageBackground: IMAGE_BACKGROUND,
+      styleId,
+      referenceImageCount: referenceImages.length,
       stream: Boolean(shouldStream),
       promptChars: prompt.length,
       inputImageApproxBytes: estimateBase64Bytes(image)
@@ -111,7 +134,7 @@ export default async function handler(req, res) {
       });
 
       let completedResponse = null;
-      const openaiStream = await openai.responses.create(createImageGenerationParams(prompt, image, true));
+      const openaiStream = await openai.responses.create(createImageGenerationParams(prompt, image, true, referenceImages));
 
       for await (const event of openaiStream) {
         if (event.type === "response.image_generation_call.partial_image") {
@@ -168,7 +191,7 @@ export default async function handler(req, res) {
       return res.end();
     }
 
-    const response = await openai.responses.create(createImageGenerationParams(prompt, image));
+    const response = await openai.responses.create(createImageGenerationParams(prompt, image, false, referenceImages));
 
     const openaiDurationMs = nowMs() - startedAt;
 
