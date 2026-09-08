@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { zipSync } from 'fflate';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import './App.css';
@@ -33,12 +34,39 @@ const STYLES = [
     promptText: "Soft Neutral Optical (Clean + Minimal + Light Wood)\nUse a bright, neutral palette with minimal variation to create a clean, modern optical environment without strong accents. CORE MATERIALS / COLORS Walls: soft warm white or neutral off-white throughout (no feature walls) Millwork / cabinetry: light natural wood (oak / blonde tone, low contrast) Floors: light neutral surface (soft gray, beige, or subtle speckled tone) DISPLAY + FIXTURES Shelving: simple light wood or white, minimal contrast Display tables: light wood or white, clean and uniform Glass: clear and minimal, no tint or color cast ACCENTS No bold or contrasting accent colors Seating and furniture remain within neutral tones (beige, light tan, soft gray) Avoid any strong color contrast between elements COLOR BEHAVIOR Keep all tones closely related and low contrast Avoid focal points or feature walls entirely All surfaces should feel consistent and blended LIGHTING Bright, even lighting with neutral to slightly warm tone No dramatic shadows or directional lighting effects MATERIAL BEHAVIOR Surfaces should feel soft and lightly textured but visually uniform Wood should be light and smooth, not grain-heavy or high contrast SPATIAL FEEL Open, clean, and highly uniform Minimal, calm, and professional Focused on clarity and simplicity over visual expression OVERALL VIBE Clean, minimal optical retail — quiet, neutral, and consistent with no visual distractions",
     color: "#8a7f76",
     previewImage: "/soft-preview.png"
+  },
+  {
+    name: "Aspen Quick Ship",
+    description: "White Wood + Weathered Feature Walls + Black",
+    allowFeatureWallTexture: true,
+    promptText: `Aspen Quick Ship Optical (White Zebrano Cabinetry + Weathered Wood Feature Walls + Black Hardware)
+Match the material contrast of the Aspen showroom reference: white wood-grain display furniture standing against warm, weathered horizontal wood walls, with black hardware and a pale washed-wood floor. The main retail walls must contribute visible warmth, texture, and depth; an all-white or uniformly pale-gray room is not the intended result.
+FEATURE WALLS — REQUIRED IN THE MAIN RETAIL AREA
+Apply a weathered horizontal wood-board surface finish to one or two existing primary retail wall planes behind the largest eyewear display run and/or reception. Use the full existing wall plane, stopping at its actual corners and openings; do not invent inset panels or arbitrary accent rectangles. Keep the wall finish visible in exposed areas above, beside, and between existing display units. Never paint the display backing panels themselves brown.
+Wall palette: medium warm taupe, aged gray-brown, muted natural brown, and scattered faded whitewash. Create the reference's irregular mix of longer horizontal boards with varied lengths and widths, softly worn grain, and occasional chalky off-white areas. The overall wall should read as warm mid-tone wood, clearly darker than the white cabinetry, not flat beige paint or uniformly white shiplap. Avoid orange pine, red wood, dark espresso, glossy varnish, black grout, or exaggerated distressed marks.
+This is a material finish on an existing flat wall: visible grain, subtle board seams, and tonal changes are allowed on these feature walls only. Do not add wall thickness, raised battens, shelving, trim, borders, or architectural partitions. If a wall already has modeled ribs or slats, preserve that exact profile and spacing rather than overlaying conflicting new divisions. Keep texture proportional to the floorplan scale and follow the wall's perspective.
+SECONDARY WALLS
+Use warm putty, mushroom, or light taupe on other retail walls, noticeably warmer than the white furniture. Keep exam rooms and corridors a quieter warm off-white. Do not spread reclaimed wood onto every room or every surface.
+EXPOSED WALL TOPS — KEEP LIGHT (MANDATORY)
+All exposed horizontal tops, caps, and cut faces of the cutaway walls must be white, warm off-white, or very pale warm gray. This includes the entire outer perimeter and every interior partition. These visible wall-thickness strips are wall surfaces, not black hardware or metal frames. Never fill them black, charcoal, dark brown, or dark gray; do not create a heavy dark rim or band around rooms. Keep only the original thin outline, with light surface fill and gentle shading. On wood feature walls, apply the weathered wood finish to the vertical face only and keep the exposed top light.
+CORE MATERIALS / COLORS
+Existing millwork, display backing panels, laminate shelving, cabinet doors, drawer fronts, reception desks, and dispensing tables: Nevamar Zebrano White laminate, a white base with very subtle pale gray linear wood grain. The finish must read as white textured wood, not beige oak, yellow wood, dark zebra stripes, marble, or glossy painted white. Keep the laminate consistent across these existing surfaces.
+Existing cabinet pulls, handles, metal legs, and metal display-case frames: matte or satin black. Apply black only to hardware and metal supports already visible in the original; preserve their exact shape and thickness. Do not extend black onto wall tops, wall caps, or cut faces. Do not add handles, legs, outlines, trim, or framing to suggest hardware.
+Floors: pale washed gray-beige wood tone with soft natural grain, lighter and less contrasty than the feature walls; retain any existing floor seams without adding new ones. Existing glass and mirrors: retain their original transparency and reflections; do not apply wood grain or black fill to the glass. Keep existing seating in light neutral gray or off-white.
+TEXTURE / GEOMETRY RULES
+On WHITE CABINETRY, suggest the Zebrano texture through faint pale-gray grain following the existing surface perspective. Keep it much quieter than the feature-wall wood; no dark stripes, knots, added seams, grooves, or borders on cabinetry. In small or distant laminate regions, use a continuous white / pale gray fill. The feature-wall texture permission does not extend to furniture, glass, the page background, or the title block. Preserve all original architectural outlines and object geometry.
+EXISTING ELEMENTS ONLY
+Treat only surfaces and hardware already present. Do not introduce furniture, eyewear, displays, signage, plants, decor, or lighting. No stone, marble, or bold accent colors.
+LIGHTING / OVERALL FEEL
+Bright, even neutral-to-slightly-warm retail lighting with soft realistic shading on existing surfaces. Preserve the reference's balance: crisp white cabinetry in the foreground, textured warm brown/taupe walls behind it, black hardware, and a light washed floor. Keep that material contrast clearly visible even in an overhead view. Before returning the image, check that every exposed wall top is light and that no dark perimeter or partition-top bands have been introduced.`,
+    color: "#e7e7e2",
+    previewImage: "/aspen-quick-ship-preview.png"
   }
 ];
 
-const MAIN_PROMPT_TEMPLATE = `## **Ultra-Strict Floorplan Colorization Prompt (No Internal Detail Allowed)**
+const buildColorizationPrompt = (style) => `## **Ultra-Strict Floorplan Colorization Prompt (${style.allowFeatureWallTexture ? 'Preserve Architecture, Allow Specified Wall Finishes' : 'No Internal Detail Allowed'})**
 
-Take the provided black-and-white floorplan or 3D render of an Eye Doctors office and **apply color only**.
+Take the provided black-and-white floorplan or 3D render of an Eye Doctors office and **apply ${style.allowFeatureWallTexture ? 'color and the specified surface finishes only' : 'color only'}**.
 
 **MANDATORY: Keep the surrounding page/background solid white (#FFFFFF) and preserve the entire original Eye Designs logo/title block in the TOP-RIGHT corner, including its border and all text.**
 
@@ -46,16 +74,16 @@ Take the provided black-and-white floorplan or 3D render of an Eye Doctors offic
 
 ### **ABSOLUTE RULES (OVERRIDE EVERYTHING)**
 
-* The output must be a **1:1 visual match** to the original in all geometry and detail
-* **No new lines, edges, shapes, boundaries, or subdivisions may be introduced**
+* The output must be a **1:1 visual match** to the original in all geometry and ${style.allowFeatureWallTexture ? 'architectural detail' : 'detail'}
+* **${style.allowFeatureWallTexture ? 'No new architectural lines, edges, shapes, boundaries, or subdivisions may be introduced. Surface grain and board seams are permitted only within the existing feature-wall faces specified by the style; they must not change geometry or obscure original linework.' : 'No new lines, edges, shapes, boundaries, or subdivisions may be introduced'}**
 * **No existing lines or details may be altered, enhanced, thickened, or stylized**
-* **No interpretation, cleanup, or improvement is allowed**
+* **${style.allowFeatureWallTexture ? 'Do not redesign, repair, or reinterpret the architecture; only the specified color and surface-finish changes are allowed' : 'No interpretation, cleanup, or improvement is allowed'}**
  
 **CRITICAL:**
 
-* Each enclosed region must remain a **single uninterrupted area**
-* **Do NOT split, segment, outline, frame, border, or decorate any region internally**
-* **Do NOT create contrast edges, bands, trims, borders, or framing effects inside any wall or surface**
+* Each enclosed region must remain a **${style.allowFeatureWallTexture ? 'single physical surface with its original extent and boundaries' : 'single uninterrupted area'}**
+* **${style.allowFeatureWallTexture ? 'Do NOT split, frame, border, or subdivide any region architecturally. Only the specified feature-wall material may have internal grain, board seams, and tonal variation.' : 'Do NOT split, segment, outline, frame, border, or decorate any region internally'}**
+* **${style.allowFeatureWallTexture ? 'Do NOT add trims, borders, framing effects, raised boards, or geometric relief. Feature-wall board seams must read as a flat material finish, never new construction.' : 'Do NOT create contrast edges, bands, trims, borders, or framing effects inside any wall or surface'}**
 * **Do NOT add light fixtures, or any element not in the original**
 * **Do NOT add any new objects, including plants, furniture, decor, people, equipment, signage, labels, icons, or logos**
 * **Do NOT generate fake text, pseudo-text, blurry labels, shadow text, or duplicate labels**
@@ -65,7 +93,7 @@ Take the provided black-and-white floorplan or 3D render of an Eye Doctors offic
 
 * **Preserve environmental signage that is physically part of the space (e.g., wall-mounted signage, branding, names like "Vision Center") AND all original logo/title blocks and their text.**
 
-If any new visual separation or edge appears that is not in the original, the result is incorrect.
+${style.allowFeatureWallTexture ? 'Any new architectural separation or edge is incorrect. Only the specified flat feature-wall finish may introduce grain and board seams within an unchanged wall face.' : 'If any new visual separation or edge appears that is not in the original, the result is incorrect.'}
 
 ### **WHITE PAGE BACKGROUND (MANDATORY)**
 
@@ -78,7 +106,7 @@ If any new visual separation or edge appears that is not in the original, the re
 
 ### **ALLOWED OPERATIONS (ONLY THESE)**
 
-* Apply **flat or very lightly graded color fills within existing closed regions ONLY**
+* Apply **${style.allowFeatureWallTexture ? 'color fills within existing closed regions, plus the specified wood grain, board seams, and tonal variation on existing feature-wall faces ONLY' : 'flat or very lightly graded color fills within existing closed regions ONLY'}**
 * Apply **subtle lighting/shading to existing architectural surfaces only, without introducing edges or contrast boundaries or shading the white page/title block**
 
 ---
@@ -102,19 +130,19 @@ If any new visual separation or edge appears that is not in the original, the re
 
 ### **STYLE (SWAP THIS SECTION ONLY)**
 
-{STYLE_TEXT}
+${style.promptText}
 
 ---
 
 ### **FINAL VALIDATION**
 
-* The result must look like **color applied only to the original architectural surfaces on a fully opaque, solid white page**
-* **Every region = one continuous fill (no internal variation that creates edges)**
+* The result must look like **${style.allowFeatureWallTexture ? 'color and specified finishes' : 'color'} applied only to the original architectural surfaces on a fully opaque, solid white page**
+* **${style.allowFeatureWallTexture ? 'Every region retains its original shape and boundaries. Required feature-wall grain and board seams may be visible only as surface texture; all other regions keep continuous fills without new edges.' : 'Every region = one continuous fill (no internal variation that creates edges)'}**
 * **The surrounding background must be solid white (#FFFFFF), with no transparency, checkerboard pattern, gray fill, texture, or gradient**
 * **If the source contains the TOP-RIGHT Eye Designs logo/title block, the output is invalid unless the entire block, border, and all original text remain visible and unchanged in the same position and size**
 * Preserve any other original logo mark, logo box, title block, or framed label as well
-* Removing color should return the exact original with no differences
-* Any edge, border, or contrast line not present in the original must be removed.`;
+* Removing ${style.allowFeatureWallTexture ? 'the applied colors and material textures' : 'color'} should return the exact original with no differences
+* Any ${style.allowFeatureWallTexture ? 'architectural edge, border, or contrast line outside the permitted feature-wall texture' : 'edge, border, or contrast line'} not present in the original must be removed.`;
 
 const MAX_GENERATION_ATTEMPTS = 2;
 
@@ -137,6 +165,26 @@ const createEmptyResultSlots = (count) => Array.from({ length: count }, (_, idx)
 }));
 
 const dataUrlFromBase64 = (imageBase64) => `data:image/png;base64,${imageBase64}`;
+
+const imageBytesFromDataUrl = (dataUrl) => (
+  Uint8Array.from(atob(dataUrl.split(',')[1]), (character) => character.charCodeAt(0))
+);
+
+const downloadBlob = (blob, filename) => {
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.style.display = 'none';
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  try {
+    anchor.click();
+  } finally {
+    anchor.remove();
+    // Give the browser time to start reading the file before releasing it.
+    setTimeout(() => window.URL.revokeObjectURL(url), 10000);
+  }
+};
 
 const readJsonLineStream = async (response, onEvent) => {
   if (!response.body) {
@@ -521,32 +569,29 @@ function App() {
 
   const handleDownload = (dataUrl, filename) => {
     try {
-      const arr = dataUrl.split(',');
-      const mime = arr[0].match(/:(.*?);/)[1];
-      const bstr = atob(arr[1]);
-      let n = bstr.length;
-      const u8arr = new Uint8Array(n);
-      while (n--) {
-        u8arr[n] = bstr.charCodeAt(n);
-      }
-      const blob = new Blob([u8arr], { type: mime });
-      const url = window.URL.createObjectURL(blob);
-
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = url;
-      a.download = filename || 'download.png';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-      // Delay revocation to prevent browsers from downloading an empty file
-      setTimeout(() => {
-        window.URL.revokeObjectURL(url);
-      }, 1000);
+      const mime = dataUrl.split(',')[0].match(/:(.*?);/)[1];
+      const blob = new Blob([imageBytesFromDataUrl(dataUrl)], { type: mime });
+      downloadBlob(blob, filename || 'download.png');
     } catch (err) {
       console.error("Failed to download image:", err);
       setErrorMsg("Failed to download the image.");
+    }
+  };
+
+  const handleDownloadAll = () => {
+    if (isGenerating || resultImages.length === 0) return;
+
+    try {
+      const files = Object.fromEntries(resultImages.map((src, idx) => [
+        `colorized_floorplan_v${idx + 1}.png`,
+        imageBytesFromDataUrl(src)
+      ]));
+      // PNGs are already compressed; store their original bytes unchanged.
+      const archive = zipSync(files, { level: 0 });
+      downloadBlob(new Blob([archive], { type: 'application/zip' }), 'colorized_floorplans.zip');
+    } catch (err) {
+      console.error("Failed to download all images:", err);
+      setErrorMsg("Failed to download all images. Please try again or download them individually.");
     }
   };
 
@@ -586,7 +631,7 @@ function App() {
 
     try {
       const style = STYLES[selectedStyleIndex];
-      let finalPrompt = MAIN_PROMPT_TEMPLATE.replace("{STYLE_TEXT}", style.promptText);
+      let finalPrompt = buildColorizationPrompt(style);
 
       if (specialInstructions.trim() !== "") {
         finalPrompt += "\n\n### **SPECIAL INSTRUCTIONS**\n" + specialInstructions.trim();
@@ -998,6 +1043,15 @@ function App() {
                 <p className="results-note">
                   {isGenerating ? 'Partial previews will sharpen as each result finishes' : 'Results may contain differences from original, click compare to check accuracy'}
                 </p>
+                <button
+                  type="button"
+                  className="download-all-btn"
+                  onClick={handleDownloadAll}
+                  disabled={isGenerating || resultImages.length === 0}
+                  title="Download all PNG images in a ZIP"
+                >
+                  download all
+                </button>
                 <div className="results-grid">
                   {displayResultSlots.map((slot, idx) => (
                     <div key={slot.id} className={`result-card result-card-${slot.status}`}>
