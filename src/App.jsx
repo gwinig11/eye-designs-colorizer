@@ -40,6 +40,8 @@ const MAIN_PROMPT_TEMPLATE = `## **Ultra-Strict Floorplan Colorization Prompt (N
 
 Take the provided black-and-white floorplan or 3D render of an Eye Doctors office and **apply color only**.
 
+**MANDATORY: Keep the surrounding page/background solid white (#FFFFFF) and preserve the entire original Eye Designs logo/title block in the TOP-RIGHT corner, including its border and all text.**
+
 ---
 
 ### **ABSOLUTE RULES (OVERRIDE EVERYTHING)**
@@ -57,26 +59,33 @@ Take the provided black-and-white floorplan or 3D render of an Eye Doctors offic
 * **Do NOT add light fixtures, or any element not in the original**
 * **Do NOT add any new objects, including plants, furniture, decor, people, equipment, signage, labels, icons, or logos**
 * **Do NOT generate fake text, pseudo-text, blurry labels, shadow text, or duplicate labels**
-* **Remove all architectural annotations and plan labels that are overlaid on floors, open areas, or drawings (e.g., material notes, room labels, dimension text, and construction notes such as "Vinyl Plank").
+* **Remove architectural annotations and plan labels overlaid on the floorplan itself (e.g., material notes, room labels, dimension text, and construction notes such as "Vinyl Plank"). NEVER remove any part of the logo/title block, including its sheet and drawing numbers.**
 * **Wall displays are almost always *Frame Dispalys* do not turn them into plants. This is an eye doctors office.
 
 
-* **Preserve only environmental signage that is physically part of the space (e.g., wall-mounted signage, branding, names like "Vision Center").**
+* **Preserve environmental signage that is physically part of the space (e.g., wall-mounted signage, branding, names like "Vision Center") AND all original logo/title blocks and their text.**
 
 If any new visual separation or edge appears that is not in the original, the result is incorrect.
+
+### **WHITE PAGE BACKGROUND (MANDATORY)**
+
+- All empty page space outside the floorplan and around the title block must be uniform, solid white (#FFFFFF), with a fully opaque output
+- Never output transparency, a checkerboard/transparency grid, gray or colored backgrounds, gradients, textures, or shadows in the surrounding page space
+- Preserve the full original composition, aspect ratio, and margins; do not crop, zoom, or reframe the image to remove the top-right title block
+- Apply the selected colors only to existing architectural surfaces inside the floorplan; the surrounding page and title-block background must stay white
 
 ---
 
 ### **ALLOWED OPERATIONS (ONLY THESE)**
 
 * Apply **flat or very lightly graded color fills within existing closed regions ONLY**
-* Apply **subtle global lighting/shading that does not introduce edges or contrast boundaries**
+* Apply **subtle lighting/shading to existing architectural surfaces only, without introducing edges or contrast boundaries or shading the white page/title block**
 
 ---
 
 ### **TEXT + LINEWORK**
 
-- Remove architectural annotations and plan labels only
+- Remove architectural annotations and plan labels only from the floorplan itself; the logo/title block and all text inside it are exempt
 - Preserve environmental signage exactly as-is (position, style, clarity)
 - Do not modify, restyle, or replace any preserved text
 - All linework must remain exactly as-is
@@ -85,9 +94,9 @@ If any new visual separation or edge appears that is not in the original, the re
 
 - If the original image includes a logo mark, logo box, title block, or framed label, it must remain visible in the output
 - Do not crop out, erase, cover, blur, repaint, simplify, move, shrink, enlarge, or replace the logo mark
-- Preserve the logo mark in the exact same location, shape, border/frame, contrast, and approximate text appearance
-- This includes small rectangles in a corner such as "Eye Designs 3D-1" or similar project/logo labels
-- The logo mark is not an architectural annotation; do not remove it when cleaning plan labels
+- Preserve the entire TOP-RIGHT Eye Designs logo/title block in the exact same location, size, shape, border/frame, and contrast, with its white background
+- Keep every original logo, letter, number, divider line, sheet number, drawing number, copyright notice, and contact detail inside that block unchanged; do not invent or substitute text or numbers
+- The entire title block is protected even though it sits outside the room and contains drawing metadata; it is not an architectural annotation to remove when cleaning plan labels
 
 ---
 
@@ -99,9 +108,11 @@ If any new visual separation or edge appears that is not in the original, the re
 
 ### **FINAL VALIDATION**
 
-* The result must look like a **single transparent color layer applied over the original**
+* The result must look like **color applied only to the original architectural surfaces on a fully opaque, solid white page**
 * **Every region = one continuous fill (no internal variation that creates edges)**
-* If the source contains a logo mark, logo box, title block, or framed label, the output is invalid unless that mark is still visible in the same place
+* **The surrounding background must be solid white (#FFFFFF), with no transparency, checkerboard pattern, gray fill, texture, or gradient**
+* **If the source contains the TOP-RIGHT Eye Designs logo/title block, the output is invalid unless the entire block, border, and all original text remain visible and unchanged in the same position and size**
+* Preserve any other original logo mark, logo box, title block, or framed label as well
 * Removing color should return the exact original with no differences
 * Any edge, border, or contrast line not present in the original must be removed.`;
 

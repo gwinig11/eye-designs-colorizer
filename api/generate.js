@@ -10,7 +10,7 @@ export const config = {
   maxDuration: 300
 };
 
-const IMAGE_MODEL = "gpt-image-2";
+const IMAGE_MODEL = "gpt-image-2.5-sunburst";
 const IMAGE_QUALITY = "auto";
 const IMAGE_BACKGROUND = "opaque";
 const TEXT_MODEL = "gpt-4o";
