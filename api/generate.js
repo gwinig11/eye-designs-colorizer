@@ -17,6 +17,16 @@ const IMAGE_QUALITY = "auto";
 const IMAGE_BACKGROUND = "opaque";
 const TEXT_MODEL = "gpt-4o";
 
+const REFERENCE_STYLE_INSTRUCTIONS = `Perform a surface colorization of Image 1 only. Image 1 is the original black-and-white drawing and the sole authority for all scene content. Images 2 and 3 are material/color samples only, never scene or object templates.
+SOURCE PRESERVATION TAKES PRIORITY OVER STYLE MATCHING AND ANY CONFLICTING PROMPT DETAIL:
+- Keep every original object, architectural element, line, opening, and physical sign in precisely its original position, shape, size, count, orientation, and perspective. Preserve the camera, crop, margins, wall thickness, room layout, furniture, displays, shelving, hardware, and empty spaces.
+- Do not add, delete, move, replace, redesign, complete, or embellish anything in Image 1. Do not turn an existing chair, cabinet, or display into a similar object from a reference. A blank surface stays blank; a sparse display stays sparse; an opening stays open. Do not infer missing detail from the references.
+- SIGNAGE IS PROTECTED: Preserve all physical signs, branding, logos, posters, artwork, and labels on objects exactly as they appear in Image 1, including their wording, spelling, numbers, font, letterforms, spacing, size, border, placement, and perspective. Do not regenerate, correct, restyle, recolor, blur, replace, or reword them. Apply wall finishes around the existing signage, without repainting the lettering or graphics. Never introduce a sign, logo, word, poster, or graphic from a reference, even on an existing display or sign surface. Preserve the entire source logo/title block and every character inside it.
+- The only permitted content removal is overlaid architectural plan annotations, such as room labels, dimensions, material notes, and construction notes. This cleanup exception NEVER applies to physical signage, branding, object labels, posters, artwork, or the logo/title block. If unsure whether text is a plan annotation or a physical sign, preserve it.
+REFERENCE USE IS LIMITED TO palette, material color, subtle surface grain, and finish on surfaces that already exist in Image 1, within their exact original outlines and following the written Aspen material rules. Never copy reference objects, product arrangements, eyewear, posters, people, shelving, cabinet fronts, handles, plants, rugs, lights, wallpaper motifs, scenery, or their placement. Material transfer must not introduce their silhouettes, edges, seams, or structural details. The only permitted new seams are the explicitly requested flat wood-board finish inside existing feature-wall faces.
+When a reference detail would change an original object or line, omit that detail and use a simple color fill. Preserve the original drawing even if the style match is less exact.
+Pass these restrictions explicitly to the image_generation tool. Return only Image 1 with the permitted surface colors/finishes; never recreate a reference scene or combine scenes.`;
+
 const loadStyleReferences = async (styleId) => {
   if (styleId !== 'aspen-quick-ship') return [];
 
@@ -37,6 +47,7 @@ const estimateBase64Bytes = (dataUrl = "") => {
 
 const createImageGenerationParams = (prompt, image, stream = false, referenceImages = []) => ({
   model: TEXT_MODEL,
+  ...(referenceImages.length ? { instructions: REFERENCE_STYLE_INSTRUCTIONS } : {}),
   input: [
     {
       role: "user",
@@ -44,13 +55,17 @@ const createImageGenerationParams = (prompt, image, stream = false, referenceIma
         { type: "input_text", text: `${prompt}\n\nCRITICAL REQUIREMENT: You MUST use the image_generation tool to output the requested image. Do not return text.` },
         ...(referenceImages.length ? [{
           type: "input_text",
-          text: "IMAGE ROLES: Image 1 is the source floorplan/render and the only image to edit. Preserve its geometry, viewpoint, composition, and protected logo/title block under the rules above. Images 2 and 3 are Aspen style references only: use their white wood-grain cabinetry, black hardware, weathered wood finishes, and restrained upholstery colors as visual material guidance. Follow the written Aspen style and special instructions wherever the references differ, including the gray wood main walls, neutral floor, limited accent colors, and light exposed wall tops. Do not copy the references' room layouts, camera views, furniture, people, signage, decor, rugs, wallpaper patterns, or additional objects. Return only the colorized Image 1.\n\nIMAGE 1 — SOURCE TO COLORIZE:"
+          text: "IMAGE 1 — ORIGINAL BLACK-AND-WHITE SOURCE TO COLORIZE. This image alone determines every object, line, physical sign, and spatial arrangement. Lock its scene contents and geometry; only the specified surface colors/finishes and removal of overlaid plan annotations are allowed. Physical signs, branding, artwork, and the logo/title block must remain exactly as supplied."
         }] : []),
         { type: "input_image", image_url: image },
         ...referenceImages.flatMap((referenceImage, index) => [
-          { type: "input_text", text: `IMAGE ${index + 2} — ASPEN STYLE REFERENCE ONLY (not the image to edit):` },
+          { type: "input_text", text: `IMAGE ${index + 2} — ASPEN COLOR/MATERIAL SAMPLE ONLY. Ignore its objects, layout, text, and decorative details. Do not copy or substitute anything from this scene into Image 1:` },
           { type: "input_image", image_url: referenceImage }
-        ])
+        ]),
+        ...(referenceImages.length ? [{
+          type: "input_text",
+          text: "FINAL SOURCE CHECK: Compare the output against Image 1, never against the references. Every original object, architectural line, opening, physical sign, logo, and graphic must remain in its original location and form. Check signs character by character: their wording, spelling, letterforms, and placement must match Image 1, with no substituted or invented text. Only overlaid plan annotations may be removed; physical signage and the entire title block are exempt from cleanup. Remove any imported reference content and restore any altered original detail before returning. If a finish cannot be applied without changing source detail, simplify or omit the finish. Output only the colorized original Image 1 with its original composition, white page, and intact title block."
+        }] : [])
       ]
     }
   ],
